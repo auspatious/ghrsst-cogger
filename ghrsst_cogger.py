@@ -83,7 +83,7 @@ def load_data(date: datetime, input_location: Path) -> Dataset:
         headers = {"Authorization": f"Bearer {os.environ['EARTHDATA_TOKEN']}"}
         url_file = JPL_BASE + FILE_STRING.format(date=date)
         with fsspec.open(url_file, headers=headers) as f:
-            data = xr.open_dataset(f, mask_and_scale=False)
+            data = xr.open_dataset(f, mask_and_scale=False).load()
     else:
         data_file = Path(input_location) / FILE_STRING.format(date=date)
         data = xr.open_dataset(data_file, mask_and_scale=False)
@@ -136,8 +136,14 @@ def write_stac(
         ".nc", ".stac-item.json"
     )
 
+    first_item = written_files[0]
+    base_cog = str(first_item)
+
+    if type(first_item) is S3Path:
+        base_cog = f"s3:/{first_item}"
+
     item = create_stac_item(
-        str(written_files[0]),
+        base_cog,
         id=stac_file.stem,
         with_proj=True,
         with_raster=True,
