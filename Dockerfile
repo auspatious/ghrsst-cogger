@@ -13,9 +13,12 @@ RUN apt-get update && apt-get install -y \
     && apt-get autoremove \
     && rm -rf /var/lib/{apt,dpkg,cache,log}
 
+# Set up pip and upgrade it
 RUN pip3 install --upgrade pip setuptools wheel
+# Install rasterio here, because it take a long time
+RUN pip3 install rasterio --no-binary rasterio
+# Now install all the normal python dependencies
 ADD requirements.txt /tmp/requirements.txt
-RUN pip3 install -r /tmp/requirements.txt
 
 ADD . /code
 

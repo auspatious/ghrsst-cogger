@@ -17,8 +17,9 @@ from rio_stac import create_stac_item
 from s3path import S3Path
 from xarray import Dataset
 
-COLLECTION = "ghrsst-to-change"
+COLLECTION = "ghrsst-mur-v2"
 FILE_STRING = "{date:%Y%m%d}090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc"
+FOLDER_PATH = "{date:%Y}/{date:%m}"
 JPL_BASE = "https://archive.podaac.earthdata.nasa.gov/podaac-ops-cumulus-protected/MUR-JPL-L4-GLOB-v4.1/"
 VARIABLES = [
     "analysed_sst",
@@ -67,9 +68,6 @@ def get_simple_raster_info(data: Dataset, var: str):
     if unit is not None:
         meta["unit"] = str(unit)
 
-    import json
-
-    json.dumps(meta)
     return [meta]
 
 
@@ -111,8 +109,10 @@ def write_data(
 
     written_files = []
     for var in VARIABLES:
-        cog_file = output_location / FILE_STRING.format(date=date).replace(
-            ".nc", f"_{var}.tif"
+        cog_file = (
+            output_location
+            / FOLDER_PATH.format(date=date)
+            / FILE_STRING.format(date=date).replace(".nc", f"_{var}.tif")
         )
         if cog_file.exists() and not overwrite:
             print(f"Skipping {var} as it already exists")
@@ -135,8 +135,10 @@ def write_stac(
     date: datetime,
     output_location: Union[Path, S3Path],
 ) -> Item:
-    stac_file = output_location / FILE_STRING.format(date=date).replace(
-        ".nc", ".stac-item.json"
+    stac_file = (
+        output_location
+        / FOLDER_PATH.format(date=date)
+        / FILE_STRING.format(date=date).replace(".nc", ".stac-item.json")
     )
 
     first_item = written_files[0]
@@ -226,7 +228,7 @@ def lambda_handler(event, _):
     for record in event["Records"]:
         event_source = record.get("eventSource")
         if event_source is not None and event_source == "aws:sqs":
-            message = record["body"]
+            message = json.loads(record["body"])
             log.info(message)
             # Get the date from the message
             date_str = message["date"]
@@ -235,7 +237,9 @@ def lambda_handler(event, _):
 
     if date_str is not None:
         date = datetime.strptime(date_str, "%Y-%m-%d")
-        output_location = os.environ.get("OUTPUT_LOCATION", "s3://files.auspatious.com/ghrsst/")
+        output_location = os.environ.get(
+            "OUTPUT_LOCATION", "s3://files.auspatious.com/ghrsst/"
+        )
         input_location = "JPL"
         overwrite = os.environ.get("OVERWRITE", "False").lower() == "true"
 

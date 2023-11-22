@@ -1,4 +1,7 @@
 data
+.terraform.lock.hcl
+terraform-provider-*
+terraform.tfstate
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

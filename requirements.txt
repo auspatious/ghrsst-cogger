@@ -1,10 +1,14 @@
+aiohttp
 awslambdaric
 click
 fsspec
+h5netcdf
+netcdf4
 odc-cloud
 odc-geo
 pystac
 rasterio
+requests
 rio-stac
 s3path
 xarray
