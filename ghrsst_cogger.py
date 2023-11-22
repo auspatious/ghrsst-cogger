@@ -75,6 +75,7 @@ def get_simple_raster_info(data: Dataset, var: str):
 
 def load_data(date: datetime, input_location: Path) -> Dataset:
     if input_location.upper() == "JPL":
+        # Handle authentication with the NASA Earthdata system
         earthdata_token = os.environ.get("EARTHDATA_TOKEN", None)
         if earthdata_token is None:
             raise GHRSSTException(
@@ -82,6 +83,8 @@ def load_data(date: datetime, input_location: Path) -> Dataset:
             )
         headers = {"Authorization": f"Bearer {os.environ['EARTHDATA_TOKEN']}"}
         url_file = JPL_BASE + FILE_STRING.format(date=date)
+
+        # Open the file
         with fsspec.open(url_file, headers=headers) as f:
             data = xr.open_dataset(f, mask_and_scale=False).load()
     else:
