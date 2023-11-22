@@ -1,8 +1,11 @@
 click
 fsspec
-odc-aws
+odc-cloud
 odc-geo
 pystac
+rasterio
 rio-stac
 s3path
 xarray
+
+--no-binary rasterio
