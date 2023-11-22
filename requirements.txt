@@ -1,0 +1,8 @@
+click
+fsspec
+odc-aws
+odc-geo
+pystac
+rio-stac
+s3path
+xarray
