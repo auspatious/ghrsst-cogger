@@ -20,3 +20,9 @@ RUN pip3 install -r /tmp/requirements.txt
 ADD . /code
 
 WORKDIR /code
+
+# Set runtime interface client as default command for the container runtime
+ENTRYPOINT [ "python", "-m", "awslambdaric" ]
+
+# Pass the name of the function handler as an argument to the runtime
+CMD [ "ghrsst_cogger.lambda_handler" ]

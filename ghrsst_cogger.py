@@ -217,6 +217,35 @@ def process_date(
     log.info(f"Wrote STAC document to: {stac_doc}")
 
 
+def lambda_handler(event, _):
+    # Set up a tidy logger
+    log = get_logger()
+    log.info(f"Event: {event}")
+
+    date_str = None
+    for record in event["Records"]:
+        event_source = record.get("eventSource")
+        if event_source is not None and event_source == "aws:sqs":
+            message = record["body"]
+            log.info(message)
+            # Get the date from the message
+            date_str = message["date"]
+        else:
+            log.error(f"No SQS message found, only {record}")
+
+    if date_str is not None:
+        date = datetime.strptime(date_str, "%Y-%m-%d")
+        output_location = os.environ.get("OUTPUT_LOCATION", "s3://files.auspatious.com/ghrsst/")
+        input_location = "JPL"
+        overwrite = os.environ.get("OVERWRITE", "False").lower() == "true"
+
+        process_date(date, input_location, output_location, overwrite)
+    else:
+        log.error("No date found in event, exiting")
+        exit(1)
+    exit(0)
+
+
 @click.option("--date", type=str)
 @click.option("--output-location", type=str)
 @click.option("--input-location", type=str, default="JPL")

@@ -1,3 +1,4 @@
+awslambdaric
 click
 fsspec
 odc-cloud
