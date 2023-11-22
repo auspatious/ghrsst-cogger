@@ -1,5 +1,11 @@
 # GHRSST Cogger and Lambda Function
 
+## Cost calculation
+
+Lambda costs `0.0000133334` per GB second. We're running with `10 GB` of memory. Each
+job takes around 5 minutes, and there's around 10,000 jobs. So we have a total cost
+of `10000 * 0.0000133334 * 10 * 5 * 60` which is `$400`.
+
 ## Infra deployment
 
 Create a secret on AWS for the Earthdata variable.

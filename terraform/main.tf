@@ -39,11 +39,11 @@ resource "aws_sqs_queue" "ghrsst_queue_dead" {
 resource "aws_lambda_function" "my_lambda" {
   function_name = "ghrsst-lambda"
   role          = aws_iam_role.ghrsst_role.arn
-  timeout       = 600  # 10 minutes
-  memory_size   = 10240 # 4GB
+  timeout       = 480   # 8 minutes
+  memory_size   = 10240 # 10 GB
 
   # Run a dockerfile
-  image_uri    = "334668851926.dkr.ecr.us-west-2.amazonaws.com/ghrsst-cogger:0.0.4"
+  image_uri    = "334668851926.dkr.ecr.us-west-2.amazonaws.com/ghrsst-cogger:0.0.9"
   package_type = "Image"
 
   # # Set up a dead-letter queue
@@ -68,7 +68,8 @@ resource "aws_lambda_event_source_mapping" "sqs_event_source_mapping" {
 
 # Set up a log group
 resource "aws_cloudwatch_log_group" "ghrsst_log_group" {
-  name = "/aws/lambda/ghrsst-lambda"
+  name              = "/aws/lambda/ghrsst-lambda"
+  retention_in_days = 5
 }
 
 # Create an IAM role for the Lambda function

@@ -19,8 +19,9 @@ RUN pip3 install --upgrade pip setuptools wheel
 RUN pip3 install rasterio --no-binary rasterio
 # Now install all the normal python dependencies
 ADD requirements.txt /tmp/requirements.txt
+RUN pip3 install -r /tmp/requirements.txt
 
-ADD . /code
+ADD ghrsst_cogger.py /code/ghrsst_cogger.py
 
 WORKDIR /code
 

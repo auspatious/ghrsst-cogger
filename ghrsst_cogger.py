@@ -27,8 +27,11 @@ VARIABLES = [
     "mask",
     "sea_ice_fraction",
     "sst_anomaly",
-    # "dt_1km_data",  # Not writing the datetime data
+    "dt_1km_data",
 ]
+# Not loading or writing the datetime data
+DROP_VARIABLES = ["dt_1km_data"]
+VARIABLES = [var for var in VARIABLES if var not in DROP_VARIABLES]
 
 
 class GHRSSTException(Exception):
@@ -84,7 +87,9 @@ def load_data(date: datetime, input_location: Path) -> Dataset:
 
         # Open the file
         with fsspec.open(url_file, headers=headers) as f:
-            data = xr.open_dataset(f, mask_and_scale=False).load()
+            data = xr.open_dataset(
+                f, mask_and_scale=False, drop_variables=DROP_VARIABLES
+            ).load()
     else:
         data_file = Path(input_location) / FILE_STRING.format(date=date)
         data = xr.open_dataset(data_file, mask_and_scale=False)
@@ -109,11 +114,8 @@ def write_data(
 
     written_files = []
     for var in VARIABLES:
-        cog_file = (
-            output_location
-            / FOLDER_PATH.format(date=date)
-            / FILE_STRING.format(date=date).replace(".nc", f"_{var}.tif")
-        )
+        cog_file = get_output_path(output_location, date, f"_{var}.tif")
+
         if cog_file.exists() and not overwrite:
             print(f"Skipping {var} as it already exists")
             written_files.append(cog_file)
@@ -129,17 +131,21 @@ def write_data(
     return written_files
 
 
+def get_output_path(output_location: Union[Path, S3Path], date: datetime, extension: str):
+    return (
+        output_location
+        / FOLDER_PATH.format(date=date)
+        / FILE_STRING.format(date=date).replace(".nc", extension)
+    )
+
+
 def write_stac(
     data: Dataset,
     written_files: Tuple[Path],
     date: datetime,
     output_location: Union[Path, S3Path],
 ) -> Item:
-    stac_file = (
-        output_location
-        / FOLDER_PATH.format(date=date)
-        / FILE_STRING.format(date=date).replace(".nc", ".stac-item.json")
-    )
+    stac_file = get_output_path(output_location, date, ".stac-item.json")
 
     first_item = written_files[0]
     base_cog = str(first_item)
@@ -189,6 +195,7 @@ def process_date(
     input_location: str,
     output_location: Union[Path, S3Path],
     overwrite: bool = False,
+    log: logging.Logger = None,
 ):
     """Process a date from a data source and output to a location
 
@@ -197,26 +204,31 @@ def process_date(
         input_location (str): Either 'jpl' to grab data from JPL, or a local folder to find the data in
         output_location (str): Location to output results to
     """
-
-    log = get_logger()
+    if log is None:
+        log = get_logger()
 
     log.info(
         f"Processing date {date:%Y-%m-%d} from {input_location} to {output_location}"
     )
 
-    log.info(f"Loading data from {input_location}")
-    data = load_data(date, input_location)
+    # Check if we've done this date already
+    stac_file = get_output_path(output_location, date, ".stac-item.json")
+    if stac_file.exists() and not overwrite:
+        log.info(f"Skipping {date:%Y-%m-%d} as it already exists")
+    else:
+        log.info(f"Loading data from {input_location}")
+        data = load_data(date, input_location)
 
-    log.info("Processing data...")
-    processed = process_data(data)
+        log.info("Processing data...")
+        processed = process_data(data)
 
-    log.info("Writing data...")
-    written_files = write_data(processed, date, output_location, overwrite)
+        log.info("Writing data...")
+        written_files = write_data(processed, date, output_location, overwrite)
 
-    log.info("Writing STAC")
-    stac_doc = write_stac(data, written_files, date, output_location)
+        log.info("Writing STAC")
+        stac_doc = write_stac(data, written_files, date, output_location)
 
-    log.info(f"Wrote STAC document to: {stac_doc}")
+        log.info(f"Wrote STAC document to: {stac_doc}")
 
 
 def lambda_handler(event, _):
@@ -240,14 +252,13 @@ def lambda_handler(event, _):
         output_location = os.environ.get(
             "OUTPUT_LOCATION", "s3://files.auspatious.com/ghrsst/"
         )
+        output_location = S3Path(output_location.replace("s3://", "/"))
         input_location = "JPL"
         overwrite = os.environ.get("OVERWRITE", "False").lower() == "true"
 
-        process_date(date, input_location, output_location, overwrite)
+        process_date(date, input_location, output_location, overwrite, log=log)
     else:
-        log.error("No date found in event, exiting")
-        exit(1)
-    exit(0)
+        raise GHRSSTException("No date found in event, exiting")
 
 
 @click.option("--date", type=str)
