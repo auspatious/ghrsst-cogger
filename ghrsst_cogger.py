@@ -52,6 +52,16 @@ def get_logger():
     return logger
 
 
+def get_output_path(
+    output_location: Union[Path, S3Path], date: datetime, extension: str
+):
+    return (
+        output_location
+        / FOLDER_PATH.format(date=date)
+        / FILE_STRING.format(date=date).replace(".nc", extension)
+    )
+
+
 def get_simple_raster_info(data: Dataset, var: str):
     variable = data[var]
 
@@ -129,14 +139,6 @@ def write_data(
         written_files.append(cog_file)
 
     return written_files
-
-
-def get_output_path(output_location: Union[Path, S3Path], date: datetime, extension: str):
-    return (
-        output_location
-        / FOLDER_PATH.format(date=date)
-        / FILE_STRING.format(date=date).replace(".nc", extension)
-    )
 
 
 def write_stac(
