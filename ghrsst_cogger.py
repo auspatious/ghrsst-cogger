@@ -62,6 +62,13 @@ def get_output_path(
     )
 
 
+def get_input_path(input_location: str, date: datetime) -> str:
+    if input_location.upper() == "JPL":
+        return JPL_BASE + "/" + FILE_STRING.format(date=date)
+    else:
+        return str(input_location / FILE_STRING.format(date=date))
+
+
 def get_simple_raster_info(data: Dataset, var: str):
     variable = data[var]
 
@@ -85,6 +92,7 @@ def get_simple_raster_info(data: Dataset, var: str):
 
 
 def load_data(date: datetime, input_location: Path) -> Dataset:
+    input_path = get_input_path(input_location, date)
     if input_location.upper() == "JPL":
         # Handle authentication with the NASA Earthdata system
         earthdata_token = os.environ.get("EARTHDATA_TOKEN", None)
@@ -93,16 +101,14 @@ def load_data(date: datetime, input_location: Path) -> Dataset:
                 "Please set the EARTHDATA_TOKEN environment variable in order to read from JPL"
             )
         headers = {"Authorization": f"Bearer {os.environ['EARTHDATA_TOKEN']}"}
-        url_file = JPL_BASE + FILE_STRING.format(date=date)
 
         # Open the file
-        with fsspec.open(url_file, headers=headers) as f:
+        with fsspec.open(input_path, headers=headers) as f:
             data = xr.open_dataset(
                 f, mask_and_scale=False, drop_variables=DROP_VARIABLES
             ).load()
     else:
-        data_file = Path(input_location) / FILE_STRING.format(date=date)
-        data = xr.open_dataset(data_file, mask_and_scale=False)
+        data = xr.open_dataset(input_path, mask_and_scale=False)
 
     data = assign_crs(data, crs="EPSG:4326")
     return data
@@ -218,7 +224,8 @@ def process_date(
     if stac_file.exists() and not overwrite:
         log.info(f"Skipping {date:%Y-%m-%d} as it already exists")
     else:
-        log.info(f"Loading data from {input_location}")
+        input_path = get_input_path(input_location, date)
+        log.info(f"Loading data from {input_path}")
         data = load_data(date, input_location)
 
         log.info("Processing data...")

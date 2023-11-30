@@ -49,12 +49,14 @@ resource "aws_lambda_function" "my_lambda" {
   memory_size   = 10240 # 10 GB
 
   # Run a dockerfile
-  image_uri    = "334668851926.dkr.ecr.us-west-2.amazonaws.com/ghrsst-cogger:0.0.9"
+  image_uri    = "334668851926.dkr.ecr.us-west-2.amazonaws.com/ghrsst-cogger:0.0.15"
   package_type = "Image"
 
   environment {
     variables = {
-      EARTHDATA_TOKEN = data.aws_secretsmanager_secret_version.earthdata_token.secret_string
+      EARTHDATA_TOKEN = data.aws_secretsmanager_secret_version.earthdata_token.secret_string,
+      OUTPUT_LOCATION = "s3://files.auspatious.com/ghrsst/"
+
     }
   }
 }
@@ -153,7 +155,7 @@ resource "aws_lambda_function" "daily_lambda" {
   memory_size = 512
 
   # Run a dockerfile
-  image_uri    = "334668851926.dkr.ecr.us-west-2.amazonaws.com/ghrsst-cogger:0.0.14"
+  image_uri    = "334668851926.dkr.ecr.us-west-2.amazonaws.com/ghrsst-cogger:0.0.15"
   package_type = "Image"
 
   environment {
