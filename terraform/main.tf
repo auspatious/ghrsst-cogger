@@ -49,7 +49,7 @@ resource "aws_lambda_function" "my_lambda" {
   memory_size   = 10240 # 10 GB
 
   # Run a dockerfile
-  image_uri    = "334668851926.dkr.ecr.us-west-2.amazonaws.com/ghrsst-cogger:0.0.15"
+  image_uri    = "334668851926.dkr.ecr.us-west-2.amazonaws.com/ghrsst-cogger:0.0.16"
   package_type = "Image"
 
   environment {
@@ -155,7 +155,7 @@ resource "aws_lambda_function" "daily_lambda" {
   memory_size = 512
 
   # Run a dockerfile
-  image_uri    = "334668851926.dkr.ecr.us-west-2.amazonaws.com/ghrsst-cogger:0.0.15"
+  image_uri    = "334668851926.dkr.ecr.us-west-2.amazonaws.com/ghrsst-cogger:0.0.16"
   package_type = "Image"
 
   environment {
