@@ -17,6 +17,8 @@ from rio_stac import create_stac_item
 from s3path import S3Path
 from xarray import Dataset
 
+from aiohttp.client_exceptions import ClientResponseError
+
 COLLECTION = "ghrsst-mur-v2"
 FILE_STRING = "{date:%Y%m%d}090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc"
 FOLDER_PATH = "{date:%Y}/{date:%m}/{date:%d}"
@@ -64,7 +66,7 @@ def get_output_path(
 
 def get_input_path(input_location: str, date: datetime) -> str:
     if input_location.upper() == "JPL":
-        return JPL_BASE + "/" + FILE_STRING.format(date=date)
+        return JPL_BASE + FILE_STRING.format(date=date)
     else:
         return str(input_location / FILE_STRING.format(date=date))
 
@@ -103,10 +105,18 @@ def load_data(date: datetime, input_location: Path) -> Dataset:
         headers = {"Authorization": f"Bearer {os.environ['EARTHDATA_TOKEN']}"}
 
         # Open the file
-        with fsspec.open(input_path, headers=headers) as f:
-            data = xr.open_dataset(
-                f, mask_and_scale=False, drop_variables=DROP_VARIABLES
-            ).load()
+        try:
+            with fsspec.open(input_path, headers=headers) as f:
+                data = xr.open_dataset(
+                    f,
+                    mask_and_scale=False,
+                    drop_variables=DROP_VARIABLES,
+                    engine="h5netcdf",
+                ).load()
+        except ClientResponseError as e:
+            raise GHRSSTException(
+                f"Failed to open {input_path} with error {e}. Please check your EARTHDATA_TOKEN."
+            )
     else:
         data = xr.open_dataset(input_path, mask_and_scale=False)
 
