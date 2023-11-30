@@ -19,7 +19,7 @@ from xarray import Dataset
 
 COLLECTION = "ghrsst-mur-v2"
 FILE_STRING = "{date:%Y%m%d}090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc"
-FOLDER_PATH = "{date:%Y}/{date:%m}"
+FOLDER_PATH = "{date:%Y}/{date:%m}/{date:%d}"
 JPL_BASE = "https://archive.podaac.earthdata.nasa.gov/podaac-ops-cumulus-protected/MUR-JPL-L4-GLOB-v4.1/"
 VARIABLES = [
     "analysed_sst",
