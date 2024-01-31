@@ -3,11 +3,18 @@ provider "aws" {
   region = "us-west-2"
 }
 
+variable "destination_bucket_name" {
+  description = "The name of the S3 bucket to store the output files"
+  type        = string
+  default     = "fake-test-bucket"
+}
+
 # Get the secret manager secret called earthdata-token
 data "aws_secretsmanager_secret" "earthdata_token" {
   name = "earthdata-token"
 }
 
+# Retrieve the earthdata token... needs to be manually created
 data "aws_secretsmanager_secret_version" "earthdata_token" {
   secret_id = data.aws_secretsmanager_secret.earthdata_token.id
 }
@@ -55,8 +62,7 @@ resource "aws_lambda_function" "my_lambda" {
   environment {
     variables = {
       EARTHDATA_TOKEN = data.aws_secretsmanager_secret_version.earthdata_token.secret_string,
-      OUTPUT_LOCATION = "s3://files.auspatious.com/ghrsst/"
-
+      OUTPUT_LOCATION = "s3://${var.destination_bucket_name}/ghrsst/"
     }
   }
 }
@@ -113,8 +119,8 @@ resource "aws_iam_policy" "ghrsst_role_policy" {
         "s3:ListBucket"
       ],
       "Resource": [
-        "arn:aws:s3:::files.auspatious.com",
-        "arn:aws:s3:::files.auspatious.com/*"
+        "arn:aws:s3:::${var.destination_bucket_name}",
+        "arn:aws:s3:::${var.destination_bucket_name}/*"
       ],
       "Effect": "Allow"
     }
@@ -144,7 +150,6 @@ resource "aws_cloudwatch_log_group" "ghrsst_log_group_daily" {
 
 
 # The second lambda function, this one just adds the last 7 days
-# Create a Lambda function
 resource "aws_lambda_function" "daily_lambda" {
   function_name = "ghrsst-lambda-daily"
   role          = aws_iam_role.ghrsst_role_daily.arn
@@ -166,7 +171,7 @@ resource "aws_lambda_function" "daily_lambda" {
 }
 
 
-# Create an IAM role for the Lambda function
+# Create an IAM role for the daily Lambda function
 resource "aws_iam_role" "ghrsst_role_daily" {
   name = "my-lambda-role-daily"
 
@@ -187,7 +192,7 @@ resource "aws_iam_role" "ghrsst_role_daily" {
 EOF
 }
 
-# And a policy
+# And a daily policy
 resource "aws_iam_policy" "ghrsst_role_policy_daily" {
   name   = "my-lambda-role-policy-daily"
   policy = <<EOF
@@ -221,7 +226,7 @@ resource "aws_iam_role_policy_attachment" "ghrsst_role_policy_attachment_daily" 
   policy_arn = aws_iam_policy.ghrsst_role_policy_daily.arn
 }
 
-# Schedule that daily lambda to run every 15 mins
+# Schedule that daily lambda
 resource "aws_cloudwatch_event_rule" "daily_lambda" {
   name                = "ghrsst-lambda-daily"
   description         = "Run the daily lambda"
@@ -234,7 +239,7 @@ resource "aws_cloudwatch_event_target" "daily_lambda" {
   arn       = aws_lambda_function.daily_lambda.arn
 }
 
-resource "aws_lambda_permission" "allow_cloudwatch_to_call_check_foo" {
+resource "aws_lambda_permission" "allow_cloudwatch_to_call_daily" {
   statement_id  = "AllowExecutionFromCloudWatch"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.daily_lambda.function_name

@@ -12,7 +12,8 @@ The architecture for this process has the following components:
   * An SQS dead-letter queue to handle failed tasks
   * A Lambda that runs the work that arrives on the queue
   * A Lambda and CloudWatch scheduling that runs every day to seed tasks
-    for the last seven days, ensuring that data stays up to date.
+    for the last seven days, ensuring that data stays up to date. Note that
+    any work that's already been done is skipped.
 
 ![Architecture](architecture.png).
 
@@ -20,7 +21,7 @@ The architecture for this process has the following components:
 
 Lambda costs `0.0000133334` per GB second. We're running with `10 GB` of memory. Each
 job takes around 5 minutes, and there's around 10,000 jobs. So we have a total cost
-of `10000 * 0.0000133334 * 10 * 5 * 60` which is `$400`. Running each day to convert
+of `10000 * 0.0000133334 * 10 * 5 * 60` which is `$400` USD. Running each day to convert
 the latest data costs almost nothing.
 
 ## Infra deployment
@@ -34,12 +35,10 @@ aws secretsmanager create-secret \
     --region us-west-2
 ```
 
-Deply with `terraform init`, `terraform plan` and then when happy
-`terraform apply`.
+Initialise first with `terraform init`, then `terraform plan` to see what will
+change, and then when happy run `terraform apply`.
 
 ## Notes on GitHub Actions
 
 This should have a Terraform process to create the ECR and use OIDC for auth
-for pushing the image from Actions to AWS.
-
-See this [howto](https://blog.tedivm.com/guides/2021/10/github-actions-push-to-aws-ecr-without-credentials-oidc/).
+for pushing the image from Actions to AWS. (Or the equivalent in Bitbucket.)
