@@ -9,6 +9,12 @@ variable "destination_bucket_name" {
   default     = "fake-test-bucket"
 }
 
+variable "image_and_tag" {
+  description = "The image URL for the lambda docker image"
+  type        = string
+  default     = "ACCOUNT.dkr.ecr.us-west-2.amazonaws.com/ghrsst-cogger:TAG"
+}
+
 # Get the secret manager secret called earthdata-token
 data "aws_secretsmanager_secret" "earthdata_token" {
   name = "earthdata-token"
@@ -56,7 +62,7 @@ resource "aws_lambda_function" "my_lambda" {
   memory_size   = 10240 # 10 GB
 
   # Run a dockerfile
-  image_uri    = "334668851926.dkr.ecr.us-west-2.amazonaws.com/ghrsst-cogger:0.0.16"
+  image_uri    = var.image_and_tag
   package_type = "Image"
 
   environment {
@@ -154,13 +160,13 @@ resource "aws_lambda_function" "daily_lambda" {
   function_name = "ghrsst-lambda-daily"
   role          = aws_iam_role.ghrsst_role_daily.arn
   image_config {
-    command = ["ghrsst_dategen.lambda_handler"]
+    command = ["ghrsst.dategen.lambda_handler"]
   }
   timeout     = 30
   memory_size = 512
 
   # Run a dockerfile
-  image_uri    = "334668851926.dkr.ecr.us-west-2.amazonaws.com/ghrsst-cogger:0.0.16"
+  image_uri    = var.image_and_tag
   package_type = "Image"
 
   environment {

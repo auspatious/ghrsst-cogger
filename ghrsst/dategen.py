@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 import boto3
 
-from ghrsst_cogger import get_logger
+from ghrsst.cogger import get_logger
 
 N_PREVIOUS_DAYS = os.environ.get("N_PREVIOUS_DAYS", 7)
 QUEUE_NAME = os.environ.get("QUEUE_NAME", "ghrsst-queue")

@@ -11,9 +11,12 @@ from typing import Tuple, Union
 import click
 import fsspec
 import xarray as xr
+from affine import Affine
 from aiohttp.client_exceptions import ClientResponseError
 from odc.aws import s3_dump  # noqa: F401
-from odc.geo.xr import assign_crs, write_cog
+from odc.geo.geobox import GeoBox
+from odc.geo.xr import assign_crs, xr_reproject
+from odc.geo.cog._rio import _write_cog
 from pystac import Asset, Item, MediaType
 from rio_stac import create_stac_item
 from s3path import S3Path
@@ -119,9 +122,36 @@ def load_data(date: datetime, input_location: Path) -> Dataset:
                 f"Failed to open {input_path} with error {e}. Please check your EARTHDATA_TOKEN."
             )
     else:
-        data = xr.open_dataset(input_path, mask_and_scale=False)
+        data = xr.open_dataset(
+            input_path, mask_and_scale=False, drop_variables=DROP_VARIABLES
+        )
 
     data = assign_crs(data, crs="EPSG:4326")
+    return data
+
+
+def process_data_reproject(data: Dataset) -> Dataset:
+    new_affine = Affine(0.01, 0.0, -180.0, 0.0, 0.01, -89.995, 0.0, 0.0, 1.0)
+    new_geobox = GeoBox(data.odc.geobox.shape, new_affine, data.odc.geobox.crs)
+
+    reprojected = xr_reproject(data, new_geobox, resampling="nearest")
+
+    return reprojected
+
+
+def process_data_change_arrays(data: Dataset) -> Dataset:
+
+    # Restructure the lon/lat values and re-calc the geobox
+    lon_1000s = range(-179995, 180000, 10)
+    lons = [float(x) / 1000 for x in lon_1000s]
+    data["lon"] = lons
+
+    lat_1000s = range(-89990, 90000, 10)
+    lats = [float(x) / 1000 for x in lat_1000s]
+    data["lat"] = lats
+
+    data = data.odc.assign_crs("EPSG:4326")
+
     return data
 
 
@@ -134,11 +164,17 @@ def write_data(
     date: datetime,
     output_location: Union[Path, S3Path],
     overwrite: bool = False,
-    log: Logger | None = None
+    log: Logger | None = None,
 ):
     if type(output_location) is not S3Path:
         if not output_location.exists():
             output_location.mkdir(parents=True)
+
+    new_geobox = GeoBox(
+        data.odc.geobox.shape,
+        Affine(0.01, 0.0, -180.0, 0.0, 0.01, -89.995, 0.0, 0.0, 1.0),
+        data.odc.geobox.crs,
+    )
 
     written_files = []
     for var in VARIABLES:
@@ -150,11 +186,27 @@ def write_data(
             continue
 
         if type(output_location) is S3Path:
-            cog_file.write_bytes(write_cog(data[var], ":mem:", **COG_OPTS))
+            cog_file.write_bytes(
+                _write_cog(
+                    data[var].data,
+                    new_geobox,
+                    ":mem:",
+                    overwrite=True,
+                    nodata=data.attrs.get("nodata", None),
+                    **COG_OPTS,
+                )
+            )
         else:
             if not cog_file.parent.exists():
                 cog_file.parent.mkdir(parents=True)
-            write_cog(data[var], str(cog_file), overwrite=True, **COG_OPTS)
+            _write_cog(
+                data[var].data,
+                new_geobox,
+                str(cog_file),
+                overwrite=True,
+                nodata=data.attrs.get("nodata", None),
+                **COG_OPTS,
+            )
 
         if log is not None:
             log.info(f"Wrote {var} to {cog_file}")

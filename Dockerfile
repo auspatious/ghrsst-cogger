@@ -21,8 +21,7 @@ RUN pip3 install rasterio --no-binary rasterio
 ADD requirements.txt /tmp/requirements.txt
 RUN pip3 install -r /tmp/requirements.txt
 
-ADD ghrsst_cogger.py /code/ghrsst_cogger.py
-ADD ghrsst_dategen.py /code/ghrsst_dategen.py
+ADD ghrsst /code/ghrsst
 
 WORKDIR /code
 
@@ -30,4 +29,4 @@ WORKDIR /code
 ENTRYPOINT [ "python", "-m", "awslambdaric" ]
 
 # Pass the name of the function handler as an argument to the runtime
-CMD [ "ghrsst_cogger.lambda_handler" ]
+CMD [ "ghrsst.cogger.lambda_handler" ]
