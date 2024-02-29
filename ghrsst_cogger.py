@@ -4,20 +4,20 @@ import json
 import logging
 import os
 from datetime import datetime
+from logging import Logger
 from pathlib import Path
 from typing import Tuple, Union
 
 import click
 import fsspec
 import xarray as xr
+from aiohttp.client_exceptions import ClientResponseError
 from odc.aws import s3_dump  # noqa: F401
 from odc.geo.xr import assign_crs, write_cog
 from pystac import Asset, Item, MediaType
 from rio_stac import create_stac_item
 from s3path import S3Path
 from xarray import Dataset
-
-from aiohttp.client_exceptions import ClientResponseError
 
 COLLECTION = "ghrsst-mur-v2"
 FILE_STRING = "{date:%Y%m%d}090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc"
@@ -34,6 +34,7 @@ VARIABLES = [
 # Not loading or writing the datetime data
 DROP_VARIABLES = ["dt_1km_data"]
 VARIABLES = [var for var in VARIABLES if var not in DROP_VARIABLES]
+COG_OPTS = dict(compress="zstd")
 
 
 class GHRSSTException(Exception):
@@ -68,7 +69,7 @@ def get_input_path(input_location: str, date: datetime) -> str:
     if input_location.upper() == "JPL":
         return JPL_BASE + FILE_STRING.format(date=date)
     else:
-        return str(input_location / FILE_STRING.format(date=date))
+        return str(Path(input_location) / FILE_STRING.format(date=date))
 
 
 def get_simple_raster_info(data: Dataset, var: str):
@@ -133,6 +134,7 @@ def write_data(
     date: datetime,
     output_location: Union[Path, S3Path],
     overwrite: bool = False,
+    log: Logger | None = None
 ):
     if type(output_location) is not S3Path:
         if not output_location.exists():
@@ -148,10 +150,15 @@ def write_data(
             continue
 
         if type(output_location) is S3Path:
-            cog_file.write_bytes(write_cog(data[var], ":mem:"))
+            cog_file.write_bytes(write_cog(data[var], ":mem:", **COG_OPTS))
         else:
-            write_cog(data[var], str(cog_file), overwrite=True)
-        print(f"Wrote {var} to {cog_file}")
+            if not cog_file.parent.exists():
+                cog_file.parent.mkdir(parents=True)
+            write_cog(data[var], str(cog_file), overwrite=True, **COG_OPTS)
+
+        if log is not None:
+            log.info(f"Wrote {var} to {cog_file}")
+
         written_files.append(cog_file)
 
     return written_files
@@ -241,13 +248,13 @@ def process_date(
         log.info("Processing data...")
         processed = process_data(data)
 
-        log.info("Writing data...")
+        log.info(f"Writing data to {output_location}")
         written_files = write_data(processed, date, output_location, overwrite)
 
         log.info("Writing STAC")
         stac_doc = write_stac(data, written_files, date, output_location)
 
-        log.info(f"Wrote STAC document to: {stac_doc}")
+        log.info(f"Finished writing to: {stac_doc.self_href}")
 
 
 def lambda_handler(event, _):
