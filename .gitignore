@@ -3,6 +3,8 @@ data
 terraform-provider-*
 terraform.tfstate
 terraform.tfstate.backup
+*.nc
+*.tif
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

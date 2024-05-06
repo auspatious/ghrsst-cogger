@@ -5,7 +5,7 @@ fsspec
 h5netcdf
 netcdf4
 odc-cloud
-odc-geo==0.4.2
+git+https://github.com/opendatacube/odc-geo.git  # TODO: remove this once odc-geo is released
 pystac
 rasterio
 requests

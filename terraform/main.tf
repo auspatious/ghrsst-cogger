@@ -9,10 +9,10 @@ variable "destination_bucket_name" {
   default     = "fake-test-bucket"
 }
 
-variable "image_and_tag" {
+variable "image_tag" {
   description = "The image URL for the lambda docker image"
   type        = string
-  default     = "ACCOUNT.dkr.ecr.us-west-2.amazonaws.com/ghrsst-cogger:TAG"
+  default     = "TAG"
 }
 
 # Get the secret manager secret called earthdata-token
@@ -23,6 +23,16 @@ data "aws_secretsmanager_secret" "earthdata_token" {
 # Retrieve the earthdata token... needs to be manually created
 data "aws_secretsmanager_secret_version" "earthdata_token" {
   secret_id = data.aws_secretsmanager_secret.earthdata_token.id
+}
+
+# Set up a ECR repository
+resource "aws_ecr_repository" "ghrsst" {
+  name = "ghrsst-cogger"
+}
+
+# Set up a S3 bucket
+resource "aws_s3_bucket" "ghrsst_bucket" {
+  bucket = var.destination_bucket_name
 }
 
 # Create an SQS queue
@@ -55,14 +65,14 @@ resource "aws_cloudwatch_log_group" "ghrsst_log_group" {
 }
 
 # Create a Lambda function
-resource "aws_lambda_function" "my_lambda" {
+resource "aws_lambda_function" "ghrsst_lambda" {
   function_name = "ghrsst-lambda"
   role          = aws_iam_role.ghrsst_role.arn
-  timeout       = 480   # 8 minutes
-  memory_size   = 10240 # 10 GB
+  timeout       = 480  # 8 minutes
+  memory_size   = 3008 # 10240 10 GB
 
   # Run a dockerfile
-  image_uri    = var.image_and_tag
+  image_uri    = "${resource.aws_ecr_repository.ghrsst.repository_url}:${var.image_tag}"
   package_type = "Image"
 
   environment {
@@ -144,7 +154,7 @@ resource "aws_iam_role_policy_attachment" "ghrsst_role_policy_attachment" {
 # Connect the lambda to the queue
 resource "aws_lambda_event_source_mapping" "sqs_event_source_mapping" {
   event_source_arn = aws_sqs_queue.ghrsst_queue.arn
-  function_name    = aws_lambda_function.my_lambda.function_name
+  function_name    = aws_lambda_function.ghrsst_lambda.function_name
   batch_size       = 1
 }
 
@@ -166,7 +176,7 @@ resource "aws_lambda_function" "daily_lambda" {
   memory_size = 512
 
   # Run a dockerfile
-  image_uri    = var.image_and_tag
+  image_uri    = "${resource.aws_ecr_repository.ghrsst.repository_url}:${var.image_tag}"
   package_type = "Image"
 
   environment {

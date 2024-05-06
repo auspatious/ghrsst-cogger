@@ -14,9 +14,9 @@ import xarray as xr
 from affine import Affine
 from aiohttp.client_exceptions import ClientResponseError
 from odc.aws import s3_dump  # noqa: F401
+from odc.geo.cog import write_cog
 from odc.geo.geobox import GeoBox
 from odc.geo.xr import assign_crs, xr_coords, xr_reproject
-from odc.geo.cog import write_cog
 from pystac import Asset, Item, MediaType
 from rio_stac import create_stac_item
 from s3path import S3Path
@@ -42,6 +42,10 @@ COG_OPTS = dict(compress="zstd")
 
 class GHRSSTException(Exception):
     """A base class for GHRSSTException exceptions."""
+
+
+def _is_s3_path(path: Union[Path, S3Path]) -> bool:
+    return isinstance(path, S3Path)
 
 
 def get_logger():
@@ -140,7 +144,6 @@ def process_data_reproject(data: Dataset) -> Dataset:
 
 
 def process_data(data: Dataset) -> Dataset:
-
     # Set up a new Affine and GeoBox
     new_affine = Affine(0.01, 0.0, -180.0, 0.0, 0.01, -89.995, 0.0, 0.0, 1.0)
     new_geobox = GeoBox(data.odc.geobox.shape, new_affine, data.odc.geobox.crs)
@@ -162,7 +165,7 @@ def write_data(
     overwrite: bool = False,
     log: Logger | None = None,
 ):
-    if type(output_location) is not S3Path:
+    if not _is_s3_path(output_location):
         if not output_location.exists():
             output_location.mkdir(parents=True)
 
@@ -171,16 +174,19 @@ def write_data(
         cog_file = get_output_path(output_location, date, f"_{var}.tif")
 
         if cog_file.exists() and not overwrite:
-            print(f"Skipping {var} as it already exists")
+            log.info(f"Skipping {var} as it already exists")
             written_files.append(cog_file)
             continue
 
-        if type(output_location) is S3Path:
-            cog_file.write_bytes(write_cog(data[var], ":mem:", **COG_OPTS))
-        else:
-            if not cog_file.parent.exists():
-                cog_file.parent.mkdir(parents=True)
-            write_cog(data[var], cog_file, **COG_OPTS)
+        data_var = data[var]
+        data_var.attrs["scales"] = data_var.attrs.get("scale_factor")
+        data_var.attrs["offsets"] = data_var.attrs.get("add_offset")
+        data_var.attrs["units"] = data_var.attrs.get("units")
+
+        if not _is_s3_path(cog_file.parent):
+            cog_file.parent.mkdir(parents=True, exist_ok=True)
+
+        cog_file.write_bytes(write_cog(data_var, ":mem:", **COG_OPTS))
 
         if log is not None:
             log.info(f"Wrote {var} to {cog_file}")
@@ -201,7 +207,7 @@ def write_stac(
     first_item = written_files[0]
     base_cog = str(first_item)
 
-    if type(first_item) is S3Path:
+    if _is_s3_path(first_item):
         base_cog = f"s3:/{first_item}"
 
     item = create_stac_item(
@@ -226,7 +232,7 @@ def write_stac(
         },
     )
 
-    if type(output_location) is S3Path:
+    if _is_s3_path(output_location):
         item.set_self_href(f"s3:/{stac_file}")
         s3_dump(
             data=json.dumps(item.to_dict(), indent=2),
@@ -275,7 +281,7 @@ def process_date(
         processed = process_data(data)
 
         log.info(f"Writing data to {output_location}")
-        written_files = write_data(processed, date, output_location, overwrite)
+        written_files = write_data(processed, date, output_location, overwrite, log=log)
 
         log.info("Writing STAC")
         stac_doc = write_stac(data, written_files, date, output_location)

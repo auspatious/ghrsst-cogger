@@ -38,6 +38,10 @@ aws secretsmanager create-secret \
 Initialise first with `terraform init`, then `terraform plan` to see what will
 change, and then when happy run `terraform apply`.
 
+Note that the first deploy will fail on the Lambda step, but will
+have created the ECR repository, so push an image, then re-apply, and
+it should work.
+
 ## Notes on GitHub Actions
 
 This should have a Terraform process to create the ECR and use OIDC for auth
