@@ -68,8 +68,8 @@ resource "aws_cloudwatch_log_group" "ghrsst_log_group" {
 resource "aws_lambda_function" "ghrsst_lambda" {
   function_name = "ghrsst-lambda"
   role          = aws_iam_role.ghrsst_role.arn
-  timeout       = 480  # 8 minutes
-  memory_size   = 3008 # 10240 10 GB
+  timeout       = 480   # 8 minutes
+  memory_size   = 10240 # 10240 10 GB
 
   # Run a dockerfile
   image_uri    = "${resource.aws_ecr_repository.ghrsst.repository_url}:${var.image_tag}"

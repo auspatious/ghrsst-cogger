@@ -125,6 +125,8 @@ def load_data(date: datetime, input_location: Path) -> Dataset:
             raise GHRSSTException(
                 f"Failed to open {input_path} with error {e}. Please check your EARTHDATA_TOKEN."
             )
+        except FileNotFoundError as e:
+            raise GHRSSTException(f"File not found for {input_path} with error {e}")
     else:
         data = xr.open_dataset(
             input_path, mask_and_scale=False, drop_variables=DROP_VARIABLES
