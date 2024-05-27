@@ -29,3 +29,10 @@ run-s3: data/20231106090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc
 		--input-location data \
 		--output-location s3://files.auspatious.com/ghrsst_test_2024 \
 		--overwrite
+
+run-dl: data/20231106090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc
+	python3 ghrsst/cogger.py \
+		--date "2024-09-09" \
+		--input-location "JPL" \
+		--output-location data/output \
+		--overwrite

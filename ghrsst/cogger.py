@@ -125,8 +125,9 @@ def load_data(date: datetime, input_location: Path) -> Dataset:
             raise GHRSSTException(
                 f"Failed to open {input_path} with error {e}. Please check your EARTHDATA_TOKEN."
             )
-        except FileNotFoundError as e:
-            raise GHRSSTException(f"File not found for {input_path} with error {e}")
+        # Don't catch this here. Catch it elsewhere and handle differently.
+        # except FileNotFoundError as e:
+        #     raise GHRSSTException(f"File not found for {input_path} with error {e}")
     else:
         data = xr.open_dataset(
             input_path, mask_and_scale=False, drop_variables=DROP_VARIABLES
@@ -152,10 +153,17 @@ def process_data(data: Dataset) -> Dataset:
 
     new_coords = xr_coords(new_geobox)
 
-    # Rename lat to latitude and lon to longitude and update the coordinates of the xarray
+    # Rename lat to latitude and lon to longitude and
+    # update the coordinates of the xarray
     new_data = data.rename({"lat": "latitude", "lon": "longitude"}).assign_coords(
         new_coords
     )
+
+    # Update SST metadata to be in celcius
+    new_data["analysed_sst"].attrs["units"] = "celsius"
+    new_data["analysed_sst"].attrs["add_offset"] = 25
+    new_data["sst_anomaly"].attrs["units"] = "celsius"
+    new_data["analysis_error"].attrs["units"] = "celsius"
 
     return new_data
 
@@ -181,9 +189,11 @@ def write_data(
             continue
 
         data_var = data[var]
+        # Rename to GDAL/ODC standard names
         data_var.attrs["scales"] = data_var.attrs.get("scale_factor")
         data_var.attrs["offsets"] = data_var.attrs.get("add_offset")
         data_var.attrs["units"] = data_var.attrs.get("units")
+        data_var.attrs["nodata"] = data_var.attrs.get("_FillValue")
 
         if not _is_s3_path(cog_file.parent):
             cog_file.parent.mkdir(parents=True, exist_ok=True)
@@ -316,7 +326,10 @@ def lambda_handler(event, _):
         input_location = "JPL"
         overwrite = os.environ.get("OVERWRITE", "False").lower() == "true"
 
-        process_date(date, input_location, output_location, overwrite, log=log)
+        try:
+            process_date(date, input_location, output_location, overwrite, log=log)
+        except FileNotFoundError as e:
+            log.error(f"Couldn't find file for date {date:%Y-%m-%d} with error {e}")
     else:
         raise GHRSSTException("No date found in event, exiting")
 
@@ -340,6 +353,8 @@ def main(date, output_location, input_location, overwrite):
     except GHRSSTException as e:
         print(f"Failed to process date {date:%Y-%m-%d} with error {e}")
         exit(1)
+    except FileNotFoundError as e:
+        print(f"Couldn't find file for date {date:%Y-%m-%d} from {e}")
 
 
 if __name__ == "__main__":
