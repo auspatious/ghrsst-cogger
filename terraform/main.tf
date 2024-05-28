@@ -41,11 +41,11 @@ resource "aws_sqs_queue" "ghrsst_queue" {
   delay_seconds              = 90
   max_message_size           = 2048
   message_retention_seconds  = 86400 # 1 day
-  receive_wait_time_seconds  = 10
-  visibility_timeout_seconds = 630 # 10.5 minutes
+  receive_wait_time_seconds  = 3
+  visibility_timeout_seconds = 900 # 15 minutes
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.ghrsst_queue_dead.arn
-    maxReceiveCount     = 2
+    maxReceiveCount     = 3
   })
 }
 
