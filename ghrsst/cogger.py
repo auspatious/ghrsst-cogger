@@ -16,7 +16,7 @@ from aiohttp.client_exceptions import ClientResponseError
 from odc.aws import s3_dump  # noqa: F401
 from odc.geo.cog import write_cog
 from odc.geo.geobox import GeoBox
-from odc.geo.xr import assign_crs, xr_coords, xr_reproject
+from odc.geo.xr import assign_crs, xr_coords
 from pystac import Asset, Item, MediaType
 from rio_stac import create_stac_item
 from s3path import S3Path
@@ -137,23 +137,17 @@ def load_data(date: datetime, input_location: Path) -> Dataset:
     return data
 
 
-def process_data_reproject(data: Dataset) -> Dataset:
-    new_affine = Affine(0.01, 0.0, -180.0, 0.0, 0.01, -89.995, 0.0, 0.0, 1.0)
-    new_geobox = GeoBox(data.odc.geobox.shape, new_affine, data.odc.geobox.crs)
-
-    reprojected = xr_reproject(data, new_geobox, resampling="nearest")
-
-    return reprojected
-
-
 def process_data(data: Dataset) -> Dataset:
     # Set up a new Affine and GeoBox
-    new_affine = Affine(0.01, 0.0, -180.0, 0.0, 0.01, -89.995, 0.0, 0.0, 1.0)
+    new_affine = Affine(0.01, 0.0, -180.0, 0.0, -0.01, 89.995, 0.0, 0.0, 1.0)
     new_geobox = GeoBox(data.odc.geobox.shape, new_affine, data.odc.geobox.crs)
 
     new_coords = xr_coords(new_geobox)
 
-    # Rename lat to latitude and lon to longitude and
+    # First flip the dataset
+    data = data.reindex(lat=data.lat[::-1])
+
+    # Rename lat to latitude and lon to longitude and then
     # update the coordinates of the xarray
     new_data = data.rename({"lat": "latitude", "lon": "longitude"}).assign_coords(
         new_coords
