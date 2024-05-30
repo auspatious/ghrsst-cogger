@@ -14,7 +14,6 @@ import xarray as xr
 from affine import Affine
 from aiohttp.client_exceptions import ClientResponseError
 from odc.aws import s3_dump  # noqa: F401
-from odc.geo.cog._rio import _write_cog
 from odc.geo.geobox import GeoBox
 from odc.geo.xr import assign_crs, xr_coords
 from pystac import Asset, Item, MediaType
@@ -209,7 +208,19 @@ def write_data(
 
         # Using _write_cog until https://github.com/opendatacube/odc-geo/issues/157
         # is resolved, then switch back to odc.geo.cog.write_cog
-        cog_file.write_bytes(_write_cog(data_var, data.odc.geobox, ":mem:", **COG_OPTS))
+        # cog_file.write_bytes(write_cog(data_var, ":mem:", **COG_OPTS))
+        from odc.geo.cog._rio import _get_gdal_metadata, _write_cog
+
+        cog_file.write_bytes(
+            _write_cog(
+                data_var,
+                data.odc.geobox,
+                ":mem:",
+                nodata=data_var.attrs.get("nodata"),
+                gdal_metadata=_get_gdal_metadata(data_var, {}),
+                **COG_OPTS,
+            )
+        )
 
         if log is not None:
             log.info(f"Wrote {var} to {cog_file}")
