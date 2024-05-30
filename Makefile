@@ -36,3 +36,11 @@ run-dl: data/20231106090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc
 		--input-location "JPL" \
 		--output-location data/output \
 		--overwrite
+
+run-dl-cache: data/20231106090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc
+	python3 ghrsst/cogger.py \
+		--date "2024-04-12" \
+		--input-location "JPL" \
+		--output-location data/output \
+		--overwrite \
+		--cache-local

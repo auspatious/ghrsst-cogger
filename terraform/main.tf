@@ -70,6 +70,9 @@ resource "aws_lambda_function" "ghrsst_lambda" {
   role          = aws_iam_role.ghrsst_role.arn
   timeout       = 480   # 8 minutes
   memory_size   = 10240 # 10240 10 GB
+  ephemeral_storage {
+    size = 1536
+  }
 
   # Run a dockerfile
   image_uri    = "${resource.aws_ecr_repository.ghrsst.repository_url}:${var.image_tag}"
@@ -78,14 +81,15 @@ resource "aws_lambda_function" "ghrsst_lambda" {
   environment {
     variables = {
       EARTHDATA_TOKEN = data.aws_secretsmanager_secret_version.earthdata_token.secret_string,
-      OUTPUT_LOCATION = "s3://${var.destination_bucket_name}/ghrsst/"
+      OUTPUT_LOCATION = "s3://${var.destination_bucket_name}/ghrsst/",
+      CACHE_LOCAL     = "True"
     }
   }
 }
 
 # Create an IAM role for the Lambda function
 resource "aws_iam_role" "ghrsst_role" {
-  name = "my-lambda-role"
+  name = "ghrsst-data-writer-role"
 
   assume_role_policy = <<EOF
 {
@@ -106,7 +110,7 @@ EOF
 
 # And a policy
 resource "aws_iam_policy" "ghrsst_role_policy" {
-  name   = "my-lambda-role-policy"
+  name   = "ghrsst-data-writer-policy"
   policy = <<EOF
 {
   "Version": "2012-10-17",
@@ -189,7 +193,7 @@ resource "aws_lambda_function" "daily_lambda" {
 
 # Create an IAM role for the daily Lambda function
 resource "aws_iam_role" "ghrsst_role_daily" {
-  name = "my-lambda-role-daily"
+  name = "ghrsst-role-daily"
 
   assume_role_policy = <<EOF
 {
@@ -210,7 +214,7 @@ EOF
 
 # And a daily policy
 resource "aws_iam_policy" "ghrsst_role_policy_daily" {
-  name   = "my-lambda-role-policy-daily"
+  name   = "ghrsst-policy-daily"
   policy = <<EOF
 {
   "Version": "2012-10-17",

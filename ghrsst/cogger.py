@@ -14,7 +14,7 @@ import xarray as xr
 from affine import Affine
 from aiohttp.client_exceptions import ClientResponseError
 from odc.aws import s3_dump  # noqa: F401
-from odc.geo.cog import write_cog
+from odc.geo.cog._rio import _write_cog
 from odc.geo.geobox import GeoBox
 from odc.geo.xr import assign_crs, xr_coords
 from pystac import Asset, Item, MediaType
@@ -79,6 +79,16 @@ def get_input_path(input_location: str, date: datetime) -> str:
         return str(Path(input_location) / FILE_STRING.format(date=date))
 
 
+def get_headers():
+    # Handle authentication with the NASA Earthdata system
+    earthdata_token = os.environ.get("EARTHDATA_TOKEN", None)
+    if earthdata_token is None:
+        raise GHRSSTException(
+            "Please set the EARTHDATA_TOKEN environment variable in order to read from JPL"
+        )
+    return {"Authorization": f"Bearer {os.environ['EARTHDATA_TOKEN']}"}
+
+
 def get_simple_raster_info(data: Dataset, var: str):
     variable = data[var]
 
@@ -101,20 +111,23 @@ def get_simple_raster_info(data: Dataset, var: str):
     return [meta]
 
 
-def load_data(date: datetime, input_location: Path) -> Dataset:
+def load_data(
+    date: datetime, input_location: Path, cache_local: bool = False
+) -> Dataset:
     input_path = get_input_path(input_location, date)
-    if input_location.upper() == "JPL":
-        # Handle authentication with the NASA Earthdata system
-        earthdata_token = os.environ.get("EARTHDATA_TOKEN", None)
-        if earthdata_token is None:
-            raise GHRSSTException(
-                "Please set the EARTHDATA_TOKEN environment variable in order to read from JPL"
-            )
-        headers = {"Authorization": f"Bearer {os.environ['EARTHDATA_TOKEN']}"}
 
+    if cache_local:
+        cache_path = Path("/tmp") / FILE_STRING.format(date=date)
+        with fsspec.open(input_path, headers=get_headers()) as f:
+            with cache_path.open("wb") as cache_f:
+                cache_f.write(f.read())
+        data = xr.open_dataset(
+            cache_path, mask_and_scale=False, drop_variables=DROP_VARIABLES
+        )
+    elif input_location.upper() == "JPL":
         # Open the file
         try:
-            with fsspec.open(input_path, headers=headers) as f:
+            with fsspec.open(input_path, headers=get_headers()) as f:
                 data = xr.open_dataset(
                     f,
                     mask_and_scale=False,
@@ -133,20 +146,27 @@ def load_data(date: datetime, input_location: Path) -> Dataset:
             input_path, mask_and_scale=False, drop_variables=DROP_VARIABLES
         )
 
-    data = assign_crs(data, crs="EPSG:4326")
     return data
 
 
 def process_data(data: Dataset) -> Dataset:
+    # Assign the CRS
+    data = assign_crs(data, crs="EPSG:4326")
+
     # Set up a new Affine and GeoBox
     new_affine = Affine(0.01, 0.0, -180.0, 0.0, -0.01, 89.995, 0.0, 0.0, 1.0)
     new_geobox = GeoBox(data.odc.geobox.shape, new_affine, data.odc.geobox.crs)
+    new_coords = xr_coords(new_geobox)
 
-    # First flip the dataset
+    # First flip the dataset vertically
     data = data.reindex(lat=data.lat[::-1])
 
     # Update the coordinates of the xarray to be precise
-    data = data.assign_coords(xr_coords(new_geobox))
+    data = data.assign_coords(new_coords)
+
+    # Now update coords for each data variable
+    for var in VARIABLES:
+        data[var].odc.reload()
 
     # Update SST metadata to be in celcius
     data["analysed_sst"].attrs["units"] = "celsius"
@@ -187,7 +207,9 @@ def write_data(
         if not _is_s3_path(cog_file.parent):
             cog_file.parent.mkdir(parents=True, exist_ok=True)
 
-        cog_file.write_bytes(write_cog(data_var, ":mem:", **COG_OPTS))
+        # Using _write_cog until https://github.com/opendatacube/odc-geo/issues/157
+        # is resolved, then switch back to odc.geo.cog.write_cog
+        cog_file.write_bytes(_write_cog(data_var, data.odc.geobox, ":mem:", **COG_OPTS))
 
         if log is not None:
             log.info(f"Wrote {var} to {cog_file}")
@@ -253,6 +275,7 @@ def process_date(
     input_location: str,
     output_location: Union[Path, S3Path],
     overwrite: bool = False,
+    cache_local: bool = False,
     log: logging.Logger = None,
 ):
     """Process a date from a data source and output to a location
@@ -276,7 +299,7 @@ def process_date(
     else:
         input_path = get_input_path(input_location, date)
         log.info(f"Loading data from {input_path}")
-        data = load_data(date, input_location)
+        data = load_data(date, input_location, cache_local=cache_local)
 
         log.info("Processing data...")
         processed = process_data(data)
@@ -314,9 +337,17 @@ def lambda_handler(event, _):
         output_location = S3Path(output_location.replace("s3://", "/"))
         input_location = "JPL"
         overwrite = os.environ.get("OVERWRITE", "False").lower() == "true"
+        cache_local = os.environ.get("CACHE_LOCAL", "False").lower() == "true"
 
         try:
-            process_date(date, input_location, output_location, overwrite, log=log)
+            process_date(
+                date,
+                input_location,
+                output_location,
+                overwrite,
+                cache_local=cache_local,
+                log=log,
+            )
         except FileNotFoundError as e:
             log.error(f"Couldn't find file for date {date:%Y-%m-%d} with error {e}")
     else:
@@ -327,8 +358,9 @@ def lambda_handler(event, _):
 @click.option("--output-location", type=str)
 @click.option("--input-location", type=str, default="JPL")
 @click.option("--overwrite", is_flag=True, default=False)
+@click.option("--cache-local", is_flag=True, default=False)
 @click.command("ghrsst-cogger")
-def main(date, output_location, input_location, overwrite):
+def main(date, output_location, input_location, overwrite, cache_local):
     date = datetime.strptime(date, "%Y-%m-%d")
 
     if output_location.startswith("s3://"):
@@ -338,7 +370,9 @@ def main(date, output_location, input_location, overwrite):
 
     # Only catch known exceptions, and otherwise let the program crash
     try:
-        process_date(date, input_location, output_location, overwrite)
+        process_date(
+            date, input_location, output_location, overwrite, cache_local=cache_local
+        )
     except GHRSSTException as e:
         print(f"Failed to process date {date:%Y-%m-%d} with error {e}")
         exit(1)
