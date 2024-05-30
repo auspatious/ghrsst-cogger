@@ -142,24 +142,19 @@ def process_data(data: Dataset) -> Dataset:
     new_affine = Affine(0.01, 0.0, -180.0, 0.0, -0.01, 89.995, 0.0, 0.0, 1.0)
     new_geobox = GeoBox(data.odc.geobox.shape, new_affine, data.odc.geobox.crs)
 
-    new_coords = xr_coords(new_geobox)
-
     # First flip the dataset
     data = data.reindex(lat=data.lat[::-1])
 
-    # Rename lat to latitude and lon to longitude and then
-    # update the coordinates of the xarray
-    new_data = data.rename({"lat": "latitude", "lon": "longitude"}).assign_coords(
-        new_coords
-    )
+    # Update the coordinates of the xarray to be precise
+    data = data.assign_coords(xr_coords(new_geobox))
 
     # Update SST metadata to be in celcius
-    new_data["analysed_sst"].attrs["units"] = "celsius"
-    new_data["analysed_sst"].attrs["add_offset"] = 25
-    new_data["sst_anomaly"].attrs["units"] = "celsius"
-    new_data["analysis_error"].attrs["units"] = "celsius"
+    data["analysed_sst"].attrs["units"] = "celsius"
+    data["analysed_sst"].attrs["add_offset"] = 25
+    data["sst_anomaly"].attrs["units"] = "celsius"
+    data["analysis_error"].attrs["units"] = "celsius"
 
-    return new_data
+    return data
 
 
 def write_data(
