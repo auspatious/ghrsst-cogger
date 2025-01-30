@@ -13,6 +13,14 @@ destroy:
 	terraform -chdir=terraform destroy \
 		-var-file=prod.tfvars
 
+# Run with `make build VERSION=0.1.0`
+build:
+	docker build -t ghrsst-cogger:latest .
+	docker tag ghrsst-cogger:latest auspatious/ghrsst-cogger:$(VERSION)
+
+push:
+	docker push auspatious/ghrsst-cogger:$(VERSION)
+
 data/20231106090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc:
 	echo "Go get the file!"
 

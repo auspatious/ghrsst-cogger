@@ -1,3 +1,12 @@
+# Set up terraform remote state on S3
+terraform {
+  backend "s3" {
+    bucket = "aad-ghrsst-terraform-state"
+    key    = "ghrsst-prod-state"
+    region = "us-west-2"
+  }
+}
+
 # Configure the AWS provider
 provider "aws" {
   region = "us-west-2"
@@ -15,14 +24,20 @@ variable "image_tag" {
   default     = "TAG"
 }
 
-# Get the secret manager secret called earthdata-token
-data "aws_secretsmanager_secret" "earthdata_token" {
-  name = "earthdata-token"
+# Get the secret manager secret called earthdata-username
+data "aws_secretsmanager_secret" "earthdata_username" {
+  name = "earthdata-username"
+}
+data "aws_secretsmanager_secret_version" "earthdata_username" {
+  secret_id = data.aws_secretsmanager_secret.earthdata_username.id
 }
 
-# Retrieve the earthdata token... needs to be manually created
-data "aws_secretsmanager_secret_version" "earthdata_token" {
-  secret_id = data.aws_secretsmanager_secret.earthdata_token.id
+# Get the secret manager secret called earthdata-password
+data "aws_secretsmanager_secret" "earthdata_password" {
+  name = "earthdata-password"
+}
+data "aws_secretsmanager_secret_version" "earthdata_password" {
+  secret_id = data.aws_secretsmanager_secret.earthdata_password.id
 }
 
 # Set up a ECR repository

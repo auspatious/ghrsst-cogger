@@ -24,6 +24,51 @@ job takes around 5 minutes, and there's around 10,000 jobs. So we have a total c
 of `10000 * 0.0000133334 * 10 * 5 * 60` which is `$400` USD. Running each day to convert
 the latest data costs almost nothing.
 
+## Infra deployment v2
+
+Create secrets on AWS for the Earthdata username and password.
+
+```bash
+aws secretsmanager create-secret \
+    --name earthdata-username \
+    --secret-string usernamegoeshere \
+    --region us-west-2
+```
+
+```bash
+aws secretsmanager create-secret \
+    --name earthdata-password \
+    --secret-string passwordgoeshere \
+    --region us-west-2
+```
+
+Manually create a bucket that will be used for [storing Terraform state](https://developer.hashicorp.com/terraform/language/backend/s3).
+
+```bash
+aws s3 mb aad-ghrsst-terraform-state
+```
+
+Configure terraform bucket and path in the top of the [terraform/main.tf](terraform/main.tf) file.
+
+Initialise, pland and apply using the terraform command line:
+
+* `terraform init`
+* `terraform plan`
+* `terraform apply`.
+
+This will likely fail on the Lambda step, so
+[push the Docker image](https://docs.aws.amazon.com/AmazonECR/latest/userguide/docker-push-ecr-image.html).
+
+```bash
+# Authenticate with ECR
+
+# Push the image
+
+```
+
+Now apply again: `terraform apply`.
+
+
 ## Infra deployment
 
 Create a secret on AWS for the Earthdata variable.
