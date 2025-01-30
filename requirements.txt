@@ -1,6 +1,7 @@
 aiohttp
 awslambdaric
 click
+earthaccess
 fsspec
 h5netcdf
 netcdf4

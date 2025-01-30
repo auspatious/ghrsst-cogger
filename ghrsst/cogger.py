@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Tuple, Union
 
 import click
+from earthaccess import login, get_edl_token
 import fsspec
 import xarray as xr
 from affine import Affine
@@ -78,14 +79,30 @@ def get_input_path(input_location: str, date: datetime) -> str:
         return str(Path(input_location) / FILE_STRING.format(date=date))
 
 
-def get_headers():
-    # Handle authentication with the NASA Earthdata system
+def get_headers() -> dict[str, str]:
+    """Get the earthdata authorisation headers for the request"""
     earthdata_token = os.environ.get("EARTHDATA_TOKEN", None)
-    if earthdata_token is None:
+    earthdata_password = os.environ.get("EARTHDATA_PASSWORD", None)
+    
+    # Do some basic checks
+    if earthdata_token is None and earthdata_password is None:
         raise GHRSSTException(
-            "Please set the EARTHDATA_TOKEN environment variable in order to read from JPL"
+            "Please set one of EARTHDATA_TOKEN or EARTHDATA_PASSWORD environment variables"
         )
-    return {"Authorization": f"Bearer {os.environ['EARTHDATA_TOKEN']}"}
+    if earthdata_password is not None:
+        if os.environ.get("EARTHDATA_USERNAME") is None:
+            raise GHRSSTException("Please set EARTHDATA_USERNAME environment variable")
+        
+    # If we don't have a token, use the username and password to get one
+    if earthdata_token is None:
+        auth = login(strategy="environment")
+        if auth.authenticated:
+            earthdata_token = get_edl_token()['access_token']
+        else:
+            raise GHRSSTException("Failed to authenticate with Earthdata")
+
+    # Return the headers
+    return {"Authorization": f"Bearer {earthdata_token}"}
 
 
 def get_simple_raster_info(data: Dataset, var: str):
