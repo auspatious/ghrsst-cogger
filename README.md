@@ -31,21 +31,37 @@ Create secrets on AWS for the Earthdata username and password.
 ```bash
 aws secretsmanager create-secret \
     --name earthdata-username \
-    --secret-string usernamegoeshere \
+    --secret-string secretusername \
     --region us-west-2
 ```
 
 ```bash
 aws secretsmanager create-secret \
     --name earthdata-password \
-    --secret-string passwordgoeshere \
+    --secret-string secretpassword \
+    --region us-west-2
+```
+
+Create secrets for AWS Access and Secret key for the prod bucket.
+
+```bash
+aws secretsmanager create-secret \
+    --name source-coop-access-key \
+    --secret-string accesskey \
+    --region us-west-2
+```
+
+```bash
+aws secretsmanager create-secret \
+    --name source-coop-secret-key \
+    --secret-string secretaccesskey \
     --region us-west-2
 ```
 
 Manually create a bucket that will be used for [storing Terraform state](https://developer.hashicorp.com/terraform/language/backend/s3).
 
 ```bash
-aws s3 mb aad-ghrsst-terraform-state
+aws s3 mb s3://aad-ghrsst-terraform-state
 ```
 
 Configure terraform bucket and path in the top of the [terraform/main.tf](terraform/main.tf) file.

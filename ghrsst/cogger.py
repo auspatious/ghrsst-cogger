@@ -3,18 +3,20 @@
 import json
 import logging
 import os
+from contextlib import contextmanager
 from datetime import datetime
 from logging import Logger
 from pathlib import Path
 from typing import Tuple, Union
 
+import boto3
 import click
-from earthaccess import login, get_edl_token
 import fsspec
 import xarray as xr
 from affine import Affine
 from aiohttp.client_exceptions import ClientResponseError
-from odc.aws import s3_dump  # noqa: F401
+from botocore.exceptions import ClientError
+from earthaccess import get_edl_token, login
 from odc.geo.geobox import GeoBox
 from odc.geo.xr import assign_crs, xr_coords
 from pystac import Asset, Item, MediaType
@@ -44,8 +46,37 @@ class GHRSSTException(Exception):
     """A base class for GHRSSTException exceptions."""
 
 
+@contextmanager
+def environ(env):
+    """Temporarily set environment variables inside the context manager and
+    fully restore previous environment afterwards
+    """
+    original_env = {key: os.getenv(key) for key in env}
+    os.environ.update(env)
+    try:
+        yield
+    finally:
+        for key, value in original_env.items():
+            if value is None:
+                del os.environ[key]
+            else:
+                os.environ[key] = value
+
+
 def _is_s3_path(path: Union[Path, S3Path]) -> bool:
     return isinstance(path, S3Path)
+
+
+def _exists(path: Union[Path, S3Path]) -> bool:
+    if _is_s3_path(path):
+        try:
+            s3 = boto3.client("s3")
+            s3.head_object(Bucket=path.bucket, Key=path.key)
+            return True
+        except ClientError:
+            return False
+    else:
+        return path.exists()
 
 
 def get_logger():
@@ -83,7 +114,7 @@ def get_headers() -> dict[str, str]:
     """Get the earthdata authorisation headers for the request"""
     earthdata_token = os.environ.get("EARTHDATA_TOKEN", None)
     earthdata_password = os.environ.get("EARTHDATA_PASSWORD", None)
-    
+
     # Do some basic checks
     if earthdata_token is None and earthdata_password is None:
         raise GHRSSTException(
@@ -92,12 +123,12 @@ def get_headers() -> dict[str, str]:
     if earthdata_password is not None:
         if os.environ.get("EARTHDATA_USERNAME") is None:
             raise GHRSSTException("Please set EARTHDATA_USERNAME environment variable")
-        
+
     # If we don't have a token, use the username and password to get one
     if earthdata_token is None:
         auth = login(strategy="environment")
         if auth.authenticated:
-            earthdata_token = get_edl_token()['access_token']
+            earthdata_token = get_edl_token()["access_token"]
         else:
             raise GHRSSTException("Failed to authenticate with Earthdata")
 
@@ -208,7 +239,7 @@ def write_data(
     for var in VARIABLES:
         cog_file = get_output_path(output_location, date, f"_{var}.tif")
 
-        if cog_file.exists() and not overwrite:
+        if _exists(cog_file) and not overwrite:
             log.info(f"Skipping {var} as it already exists")
             written_files.append(cog_file)
             continue
@@ -258,8 +289,9 @@ def write_stac(
     first_item = written_files[0]
     base_cog = str(first_item)
 
-    if _is_s3_path(first_item):
-        base_cog = f"s3:/{first_item}"
+    if _is_s3_path(output_location):
+        # Assume we're writing to source.coop
+        base_cog = f"https://data.source.coop/{first_item}"
 
     item = create_stac_item(
         base_cog,
@@ -273,7 +305,7 @@ def write_stac(
         },
         assets={
             var: Asset(
-                href=str(file.name),
+                href=f"https://data.source.coop{file}",
                 title=var,
                 media_type=MediaType.COG,
                 roles=["data"],
@@ -284,10 +316,13 @@ def write_stac(
     )
 
     if _is_s3_path(output_location):
-        item.set_self_href(f"s3:/{stac_file}")
-        s3_dump(
-            data=json.dumps(item.to_dict(), indent=2),
-            url=item.self_href,
+        # Assume we're writing to source.coop
+        item.set_self_href(f"https://data.source.coop{stac_file}")
+        s3 = boto3.client("s3")
+        s3.put_object(
+            Bucket=stac_file.bucket,
+            Key=stac_file.key,
+            Body=json.dumps(item.to_dict(), indent=2),
             ACL="bucket-owner-full-control",
             ContentType="application/json",
         )
@@ -296,6 +331,27 @@ def write_stac(
         item.save_object()
 
     return item
+
+
+def get_context() -> dict[str, str]:
+    # Deal with the case where we're writing to source coop
+    sc_endpoint = os.environ.get("SOURCECOOP_AWS_ENDPOINT_URL")
+    sc_access_key = os.environ.get("SOURCECOOP_AWS_ACCESS_KEY_ID")
+    sc_secret_key = os.environ.get("SOURCECOOP_AWS_SECRET_ACCESS_KEY")
+
+    context = {}
+    if (
+        sc_endpoint is not None
+        and sc_access_key is not None
+        and sc_secret_key is not None
+    ):
+        context = {
+            "AWS_ENDPOINT_URL": sc_endpoint,
+            "AWS_ACCESS_KEY_ID": sc_access_key,
+            "AWS_SECRET_ACCESS_KEY": sc_secret_key,
+        }
+
+    return context
 
 
 def process_date(
@@ -320,25 +376,31 @@ def process_date(
         f"Processing date {date:%Y-%m-%d} from {input_location} to {output_location}"
     )
 
-    # Check if we've done this date already
-    stac_file = get_output_path(output_location, date, ".stac-item.json")
-    if stac_file.exists() and not overwrite:
-        log.info(f"Skipping {date:%Y-%m-%d} as it already exists")
-    else:
-        input_path = get_input_path(input_location, date)
-        log.info(f"Loading data from {input_path}")
-        data = load_data(date, input_location, cache_local=cache_local)
+    # Switch up our environment, in case we need to work on source.coop
+    context = get_context()
 
-        log.info("Processing data...")
-        processed = process_data(data)
+    with environ(context):
+        # Check if we've done this date already
+        stac_file = get_output_path(output_location, date, ".stac-item.json")
+        if _exists(stac_file) and not overwrite:
+            log.info(f"Skipping {date:%Y-%m-%d} as it already exists")
+        else:
+            input_path = get_input_path(input_location, date)
+            log.info(f"Loading data from {input_path}")
+            data = load_data(date, input_location, cache_local=cache_local)
 
-        log.info(f"Writing data to {output_location}")
-        written_files = write_data(processed, date, output_location, overwrite, log=log)
+            log.info("Processing data...")
+            processed = process_data(data)
 
-        log.info("Writing STAC")
-        stac_doc = write_stac(data, written_files, date, output_location)
+            log.info(f"Writing data to {output_location}")
+            written_files = write_data(
+                processed, date, output_location, overwrite, log=log
+            )
 
-        log.info(f"Finished writing to: {stac_doc.self_href}")
+            log.info("Writing STAC")
+            stac_doc = write_stac(data, written_files, date, output_location)
+
+            log.info(f"Finished writing to: {stac_doc.self_href}")
 
 
 def lambda_handler(event, _):
@@ -385,7 +447,7 @@ def lambda_handler(event, _):
 @click.option("--date", type=str)
 @click.option("--output-location", type=str)
 @click.option("--input-location", type=str, default="JPL")
-@click.option("--overwrite", is_flag=True, default=False)
+@click.option("--overwrite/--no-overwrite", is_flag=True, default=False)
 @click.option("--cache-local", is_flag=True, default=False)
 @click.command("ghrsst-cogger")
 def main(date, output_location, input_location, overwrite, cache_local):

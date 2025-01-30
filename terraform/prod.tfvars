@@ -1,2 +1,2 @@
 destination_bucket_name = "idea-ghrsst-testing"
-image_tag               = "0.9.0"
+image_tag               = "0.9.3"

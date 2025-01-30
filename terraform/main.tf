@@ -40,6 +40,22 @@ data "aws_secretsmanager_secret_version" "earthdata_password" {
   secret_id = data.aws_secretsmanager_secret.earthdata_password.id
 }
 
+# Get the secret manager secret for the access key id
+data "aws_secretsmanager_secret" "aws_access_key_id" {
+  name = "source-coop-access-key"
+}
+data "aws_secretsmanager_secret_version" "aws_access_key_id" {
+  secret_id = data.aws_secretsmanager_secret.aws_access_key_id.id
+}
+
+# Get the secret manager secret for the secret access key
+data "aws_secretsmanager_secret" "aws_secret_access_key" {
+  name = "source-coop-secret-key"
+}
+data "aws_secretsmanager_secret_version" "aws_secret_access_key" {
+  secret_id = data.aws_secretsmanager_secret.aws_secret_access_key.id
+}
+
 # Set up a ECR repository
 resource "aws_ecr_repository" "ghrsst" {
   name = "ghrsst-cogger"
@@ -95,9 +111,13 @@ resource "aws_lambda_function" "ghrsst_lambda" {
 
   environment {
     variables = {
-      EARTHDATA_TOKEN = data.aws_secretsmanager_secret_version.earthdata_token.secret_string,
-      OUTPUT_LOCATION = "s3://${var.destination_bucket_name}/ghrsst/",
-      CACHE_LOCAL     = "True"
+      EARTHDATA_USERNAME = data.aws_secretsmanager_secret_version.earthdata_username.secret_string,
+      EARTHDATA_PASSWORD = data.aws_secretsmanager_secret_version.earthdata_password.secret_string,
+      # SOURCECOOP_AWS_ENDPOINT_URL = "https://data.source.coop"
+      # SOURCECOOP_AWS_ACCESS_KEY_ID = data.aws_secretsmanager_secret_version.aws_access_key_id.secret_string,
+      # SOURCECOOP_AWS_SECRET_ACCESS_KEY = data.aws_secretsmanager_secret_version.aws_secret_access_key.secret_string,
+      OUTPUT_LOCATION = "s3://us-west-2.opendata.source.coop/ausantarctic/ghrsst-mur-v2/",
+      CACHE_LOCAL     = "false"
     }
   }
 }
@@ -155,7 +175,9 @@ resource "aws_iam_policy" "ghrsst_role_policy" {
       ],
       "Resource": [
         "arn:aws:s3:::${var.destination_bucket_name}",
-        "arn:aws:s3:::${var.destination_bucket_name}/*"
+        "arn:aws:s3:::${var.destination_bucket_name}/*",
+        "arn:aws:s3:::us-west-2.opendata.source.coop",
+        "arn:aws:s3:::us-west-2.opendata.source.coop/*"
       ],
       "Effect": "Allow"
     }
