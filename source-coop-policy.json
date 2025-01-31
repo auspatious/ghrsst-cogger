@@ -1,0 +1,30 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "BucketLevelPermissionsAusAntarctic",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::381491825451:role/ghrsst-data-writer-role"
+            },
+            "Action": [
+                "s3:ListBucket"
+            ],
+            "Resource": "arn:aws:s3:::us-west-2.opendata.source.coop"
+        },
+        {
+            "Sid": "ObjectLevelPermissionsAusAntarctic",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::381491825451:role/ghrsst-data-writer-role"
+            },
+            "Action": [
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:AbortMultipartUpload",
+                "s3:ListMultipartUploadParts"
+            ],
+            "Resource": "arn:aws:s3:::us-west-2.opendata.source.coop/ausantarctic/ghrsst-mur-v2/*"
+        }
+    ]
+}

@@ -24,7 +24,7 @@ from rio_stac import create_stac_item
 from s3path import S3Path
 from xarray import Dataset
 
-from odc.geo.cog import save_cog_with_dask
+from odc.geo.cog import write_cog
 
 COLLECTION = "ghrsst-mur-v2"
 FILE_STRING = "{date:%Y%m%d}090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc"
@@ -172,17 +172,18 @@ def get_simple_raster_info(data: Dataset, var: str):
 
 
 def load_data(
-    date: datetime, input_location: Path, cache_local: bool = False
+    date: datetime, input_location: Path, cache_local: bool = False, log: Logger = None
 ) -> Dataset:
     input_path = get_input_path(input_location, date)
 
     if cache_local:
+        log.info(f"Caching {input_path} locally")
         cache_path = Path("/tmp") / FILE_STRING.format(date=date)
         with fsspec.open(input_path, headers=get_headers()) as f:
             with cache_path.open("wb") as cache_f:
                 cache_f.write(f.read())
         data = xr.open_dataset(
-            cache_path, mask_and_scale=False, drop_variables=DROP_VARIABLES
+            cache_path, chunks={}, mask_and_scale=False, drop_variables=DROP_VARIABLES
         )
     elif input_location.upper() == "JPL":
         # Open the file
@@ -274,7 +275,9 @@ def write_data(
 
         log.info(f"Writing {var} to {cog_path_str}")
 
-        save_cog_with_dask(data_var, cog_path_str, **COG_OPTS)
+        # cog = save_cog_with_dask(data_var, cog_path_str, **COG_OPTS)
+        # cog.compute()
+        cog_file.write_bytes(write_cog(data_var, ":mem:", **COG_OPTS))
         # from odc.geo.cog._rio import _get_gdal_metadata, _write_cog
 
         # cog_file.write_bytes(
@@ -301,11 +304,14 @@ def write_stac(
     written_files: Tuple[Path],
     date: datetime,
     output_location: Union[Path, S3Path],
+    log: Logger | None = None
 ) -> Item:
     stac_file = get_output_path(output_location, date, ".stac-item.json")
 
     first_item = written_files[0]
     href = _get_href(first_item)
+
+    log.info(f"Writing STAC based on {href}")
 
     item = create_stac_item(
         href,
@@ -403,7 +409,7 @@ def process_date(
         else:
             input_path = get_input_path(input_location, date)
             log.info(f"Loading data from {input_path}")
-            data = load_data(date, input_location, cache_local=cache_local)
+            data = load_data(date, input_location, cache_local=cache_local, log=log)
 
             log.info("Processing data...")
             processed = process_data(data)
@@ -417,7 +423,7 @@ def process_date(
             )
 
             log.info("Writing STAC")
-            stac_doc = write_stac(data, written_files, date, output_location)
+            stac_doc = write_stac(data, written_files, date, output_location, log=log)
 
             log.info(f"Finished writing to: {stac_doc.self_href}")
 
@@ -467,7 +473,7 @@ def lambda_handler(event, _):
 @click.option("--output-location", type=str)
 @click.option("--input-location", type=str, default="JPL")
 @click.option("--overwrite/--no-overwrite", is_flag=True, default=False)
-@click.option("--cache-local", is_flag=True, default=False)
+@click.option("--cache-local/--no-cache-local", is_flag=True, default=False)
 @click.command("ghrsst-cogger")
 def main(date, output_location, input_location, overwrite, cache_local):
     date = datetime.strptime(date, "%Y-%m-%d")

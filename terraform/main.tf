@@ -12,10 +12,10 @@ provider "aws" {
   region = "us-west-2"
 }
 
-variable "destination_bucket_name" {
-  description = "The name of the S3 bucket to store the output files"
+variable "destination_bucket_path" {
+  description = "The path to the destination S3 bucket"
   type        = string
-  default     = "fake-test-bucket"
+  default     = "s3://fake-test-bucket/path/"
 }
 
 variable "image_tag" {
@@ -63,7 +63,7 @@ resource "aws_ecr_repository" "ghrsst" {
 
 # Set up a S3 bucket
 resource "aws_s3_bucket" "ghrsst_bucket" {
-  bucket = var.destination_bucket_name
+  bucket = "idea-ghrsst-testing"
 }
 
 # Create an SQS queue
@@ -113,12 +113,11 @@ resource "aws_lambda_function" "ghrsst_lambda" {
     variables = {
       EARTHDATA_USERNAME = data.aws_secretsmanager_secret_version.earthdata_username.secret_string,
       EARTHDATA_PASSWORD = data.aws_secretsmanager_secret_version.earthdata_password.secret_string,
-      # SOURCECOOP_AWS_ENDPOINT_URL = "https://data.source.coop"
+      # SOURCECOOP_AWS_ENDPOINT_URL = "https://data.source.coop",
       # SOURCECOOP_AWS_ACCESS_KEY_ID = data.aws_secretsmanager_secret_version.aws_access_key_id.secret_string,
       # SOURCECOOP_AWS_SECRET_ACCESS_KEY = data.aws_secretsmanager_secret_version.aws_secret_access_key.secret_string,
-      # OUTPUT_LOCATION = "s3://us-west-2.opendata.source.coop/ausantarctic/ghrsst-mur-v2/",
-      OUTPUT_LOCATION = "s3://${var.destination_bucket_name}/ghrsst-mur-v2/",
-      CACHE_LOCAL     = "false"
+      OUTPUT_LOCATION = "s3://${var.destination_bucket_path}",
+      CACHE_LOCAL     = "true"
     }
   }
 }
@@ -172,11 +171,13 @@ resource "aws_iam_policy" "ghrsst_role_policy" {
       "Action": [
         "s3:GetObject",
         "s3:PutObject",
-        "s3:ListBucket"
+        "s3:ListBucket",
+        "s3:ListMultiPartUploadParts",
+        "s3:AbortMultipartUpload",
       ],
       "Resource": [
-        "arn:aws:s3:::${var.destination_bucket_name}",
-        "arn:aws:s3:::${var.destination_bucket_name}/*",
+        "arn:aws:s3:::${aws_s3_bucket.ghrsst_bucket.bucket}",
+        "arn:aws:s3:::${aws_s3_bucket.ghrsst_bucket.bucket}/*",
         "arn:aws:s3:::us-west-2.opendata.source.coop",
         "arn:aws:s3:::us-west-2.opendata.source.coop/*"
       ],

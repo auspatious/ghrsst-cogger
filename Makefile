@@ -45,6 +45,7 @@ run-s3: data/20231106090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc
 		--date "2025-01-01" \
 		--input-location data \
 		--output-location s3://idea-ghrsst-testing/ghrsst-mur-v2/ \
+		--cache-local \
 		--overwrite
 
 run-dl: data/20231106090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc
