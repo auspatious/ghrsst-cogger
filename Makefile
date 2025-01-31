@@ -44,7 +44,7 @@ run-s3: data/20231106090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc
 	python3 ghrsst/cogger.py \
 		--date "2025-01-01" \
 		--input-location data \
-		--output-location s3://files.auspatious.com/ghrsst_test_2024 \
+		--output-location s3://idea-ghrsst-testing/ghrsst-mur-v2/ \
 		--overwrite
 
 run-dl: data/20231106090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc

@@ -116,7 +116,8 @@ resource "aws_lambda_function" "ghrsst_lambda" {
       # SOURCECOOP_AWS_ENDPOINT_URL = "https://data.source.coop"
       # SOURCECOOP_AWS_ACCESS_KEY_ID = data.aws_secretsmanager_secret_version.aws_access_key_id.secret_string,
       # SOURCECOOP_AWS_SECRET_ACCESS_KEY = data.aws_secretsmanager_secret_version.aws_secret_access_key.secret_string,
-      OUTPUT_LOCATION = "s3://us-west-2.opendata.source.coop/ausantarctic/ghrsst-mur-v2/",
+      # OUTPUT_LOCATION = "s3://us-west-2.opendata.source.coop/ausantarctic/ghrsst-mur-v2/",
+      OUTPUT_LOCATION = "s3://${var.destination_bucket_name}/ghrsst-mur-v2/",
       CACHE_LOCAL     = "false"
     }
   }

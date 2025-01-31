@@ -24,6 +24,8 @@ from rio_stac import create_stac_item
 from s3path import S3Path
 from xarray import Dataset
 
+from odc.geo.cog import save_cog_with_dask
+
 COLLECTION = "ghrsst-mur-v2"
 FILE_STRING = "{date:%Y%m%d}090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc"
 FOLDER_PATH = "{date:%Y}/{date:%m}/{date:%d}"
@@ -78,6 +80,17 @@ def _exists(path: Union[Path, S3Path]) -> bool:
     else:
         return path.exists()
 
+
+def _get_href(path: Union[Path, S3Path]) -> str:
+    href = str(path)
+    if _is_s3_path(path):
+        # Assume we're writing to source.coop
+        if "ausantarctic" in str(path):
+            href = f"https://data.source.coop/{path}"
+        else:
+            href = f"s3:/{path}"
+
+    return href
 
 def get_logger():
     logger = logging.getLogger(__name__)
@@ -235,6 +248,8 @@ def write_data(
         if not output_location.exists():
             output_location.mkdir(parents=True)
 
+    data = data.chunk({"time": 1, "lat": 500, "lon": 500})
+
     written_files = []
     for var in VARIABLES:
         cog_file = get_output_path(output_location, date, f"_{var}.tif")
@@ -251,27 +266,30 @@ def write_data(
         data_var.attrs["units"] = data_var.attrs.get("units")
         data_var.attrs["nodata"] = data_var.attrs.get("_FillValue")
 
+        cog_path_str = str(cog_file)
         if not _is_s3_path(cog_file.parent):
             cog_file.parent.mkdir(parents=True, exist_ok=True)
+        else:
+            cog_path_str = f"s3:/{cog_file}"
 
-        # Using _write_cog until https://github.com/opendatacube/odc-geo/issues/157
-        # is resolved, then switch back to odc.geo.cog.write_cog
-        # cog_file.write_bytes(write_cog(data_var, ":mem:", **COG_OPTS))
-        from odc.geo.cog._rio import _get_gdal_metadata, _write_cog
+        log.info(f"Writing {var} to {cog_path_str}")
 
-        cog_file.write_bytes(
-            _write_cog(
-                data_var,
-                data.odc.geobox,
-                ":mem:",
-                nodata=data_var.attrs.get("nodata"),
-                gdal_metadata=_get_gdal_metadata(data_var, {}),
-                **COG_OPTS,
-            )
-        )
+        save_cog_with_dask(data_var, cog_path_str, **COG_OPTS)
+        # from odc.geo.cog._rio import _get_gdal_metadata, _write_cog
+
+        # cog_file.write_bytes(
+        #     _write_cog(
+        #         data_var,
+        #         data.odc.geobox,
+        #         ":mem:",
+        #         nodata=data_var.attrs.get("nodata"),
+        #         gdal_metadata=_get_gdal_metadata(data_var, {}),
+        #         **COG_OPTS,
+        #     )
+        # )
 
         if log is not None:
-            log.info(f"Wrote {var} to {cog_file}")
+            log.info(f"Finished writing {var}")
 
         written_files.append(cog_file)
 
@@ -287,14 +305,10 @@ def write_stac(
     stac_file = get_output_path(output_location, date, ".stac-item.json")
 
     first_item = written_files[0]
-    base_cog = str(first_item)
-
-    if _is_s3_path(output_location):
-        # Assume we're writing to source.coop
-        base_cog = f"https://data.source.coop/{first_item}"
+    href = _get_href(first_item)
 
     item = create_stac_item(
-        base_cog,
+        href,
         id=stac_file.stem,
         with_proj=True,
         with_raster=True,
@@ -305,7 +319,7 @@ def write_stac(
         },
         assets={
             var: Asset(
-                href=f"https://data.source.coop{file}",
+                href=_get_href(file),
                 title=var,
                 media_type=MediaType.COG,
                 roles=["data"],
@@ -317,7 +331,7 @@ def write_stac(
 
     if _is_s3_path(output_location):
         # Assume we're writing to source.coop
-        item.set_self_href(f"https://data.source.coop{stac_file}")
+        item.set_self_href(_get_href(stac_file))
         s3 = boto3.client("s3")
         s3.put_object(
             Bucket=stac_file.bucket,
@@ -376,6 +390,8 @@ def process_date(
         f"Processing date {date:%Y-%m-%d} from {input_location} to {output_location}"
     )
 
+    log.info(f"Overwrite: {overwrite}, Cache Local: {cache_local}")
+
     # Switch up our environment, in case we need to work on source.coop
     context = get_context()
 
@@ -392,7 +408,10 @@ def process_date(
             log.info("Processing data...")
             processed = process_data(data)
 
-            log.info(f"Writing data to {output_location}")
+            if _is_s3_path(output_location):
+                log.info(f"Writing data to s3:/{output_location}")
+            else:
+                log.info(f"Writing data to {output_location}")
             written_files = write_data(
                 processed, date, output_location, overwrite, log=log
             )
