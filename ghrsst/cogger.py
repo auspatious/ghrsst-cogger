@@ -19,12 +19,10 @@ from botocore.exceptions import ClientError
 from earthaccess import get_edl_token, login
 from odc.geo.geobox import GeoBox
 from odc.geo.xr import assign_crs, xr_coords
-from pystac import Asset, Item, MediaType
+from pystac import Asset, Item, MediaType, Link, RelType
 from rio_stac import create_stac_item
 from s3path import S3Path
 from xarray import Dataset
-
-from odc.geo.cog import write_cog
 
 COLLECTION = "ghrsst-mur-v2"
 FILE_STRING = "{date:%Y%m%d}090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc"
@@ -85,8 +83,8 @@ def _get_href(path: Union[Path, S3Path]) -> str:
     href = str(path)
     if _is_s3_path(path):
         # Assume we're writing to source.coop
-        if "ausantarctic" in str(path):
-            href = f"https://data.source.coop/{path}"
+        if "us-west-2.opendata.source.coop" in str(path):
+            href = f"https://data.source.coop{str(path).replace('/us-west-2.opendata.source.coop', '')}"
         else:
             href = f"s3:/{path}"
 
@@ -275,21 +273,27 @@ def write_data(
 
         log.info(f"Writing {var} to {cog_path_str}")
 
+        # Stream direct to S3
         # cog = save_cog_with_dask(data_var, cog_path_str, **COG_OPTS)
         # cog.compute()
-        cog_file.write_bytes(write_cog(data_var, ":mem:", **COG_OPTS))
-        # from odc.geo.cog._rio import _get_gdal_metadata, _write_cog
 
-        # cog_file.write_bytes(
-        #     _write_cog(
-        #         data_var,
-        #         data.odc.geobox,
-        #         ":mem:",
-        #         nodata=data_var.attrs.get("nodata"),
-        #         gdal_metadata=_get_gdal_metadata(data_var, {}),
-        #         **COG_OPTS,
-        #     )
-        # )
+        # Use the public method. This does _NOT_ write the correct
+        # geotransform... TODO: report and resolve.
+        # from odc.geo.cog import write_cog
+        # cog_file.write_bytes(write_cog(data_var, ":mem:", **COG_OPTS))
+
+        # Use the private method, forcing the geobox
+        from odc.geo.cog._rio import _get_gdal_metadata, _write_cog
+        cog_file.write_bytes(
+            _write_cog(
+                data_var,
+                data.odc.geobox,
+                ":mem:",
+                nodata=data_var.attrs.get("nodata"),
+                gdal_metadata=_get_gdal_metadata(data_var, {}),
+                **COG_OPTS,
+            )
+        )
 
         if log is not None:
             log.info(f"Finished writing {var}")
@@ -333,6 +337,15 @@ def write_stac(
             )
             for var, file in zip(VARIABLES, written_files)
         },
+    )
+
+    item.add_link(
+        Link(
+            rel=RelType.CANONICAL,
+            target=get_input_path("JPL", date),
+            media_type=MediaType.NETCDF,
+            title="Original NetCDF",
+        )
     )
 
     if _is_s3_path(output_location):

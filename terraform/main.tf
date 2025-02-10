@@ -173,7 +173,7 @@ resource "aws_iam_policy" "ghrsst_role_policy" {
         "s3:PutObject",
         "s3:ListBucket",
         "s3:ListMultiPartUploadParts",
-        "s3:AbortMultipartUpload",
+        "s3:AbortMultipartUpload"
       ],
       "Resource": [
         "arn:aws:s3:::${aws_s3_bucket.ghrsst_bucket.bucket}",

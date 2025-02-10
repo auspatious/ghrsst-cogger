@@ -33,9 +33,9 @@ run-source-coop:
 		--output-location "s3://ausantarctic/ghrsst-mur-v2/" \
 		--overwrite
 
-run-local: data/20231106090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc
+run-local:
 	python3 ghrsst/cogger.py \
-		--date "2023-11-06" \
+		--date "2025-02-02" \
 		--input-location data \
 		--output-location data/output \
 		--overwrite
