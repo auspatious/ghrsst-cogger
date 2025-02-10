@@ -13,6 +13,9 @@ destroy:
 	terraform -chdir=terraform destroy \
 		-var-file=prod.tfvars
 
+update-readme:
+	aws s3 cp readme_for_source_coop.md s3://ausantarctic/ghrsst-mur-v2/README.md
+
 # Run with `make build VERSION=0.1.0`
 build:
 	docker buildx build --platform linux/amd64 -t ghrsst-cogger:latest .
@@ -62,3 +65,4 @@ run-dl-cache: data/20231106090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc
 		--output-location data/output \
 		--overwrite \
 		--cache-local
+
