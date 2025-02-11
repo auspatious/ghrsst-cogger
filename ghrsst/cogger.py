@@ -213,7 +213,7 @@ def process_data(data: Dataset) -> Dataset:
     data = assign_crs(data, crs="EPSG:4326")
 
     # Set up a new Affine and GeoBox
-    new_affine = Affine(0.01, 0.0, -180.0, 0.0, -0.01, 89.995, 0.0, 0.0, 1.0)
+    new_affine = Affine(0.01, 0.0, -179.995, 0.0, -0.01, 89.995, 0.0, 0.0, 1.0)
     new_geobox = GeoBox(data.odc.geobox.shape, new_affine, data.odc.geobox.crs)
     new_coords = xr_coords(new_geobox)
 
@@ -320,9 +320,10 @@ def write_stac(
     item = create_stac_item(
         href,
         id=stac_file.stem,
+        collection="ghrsst-mur-v2",
+        input_datetime=date,
         with_proj=True,
         with_raster=True,
-        input_datetime=date,
         properties={
             "start_datetime": f"{date:%Y-%m-%d}T00:00:00Z",
             "end_datetime": f"{date:%Y-%m-%d}T23:59:59Z",
