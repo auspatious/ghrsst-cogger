@@ -1,4 +1,5 @@
 import asyncio
+from logging import Logger
 import os
 from datetime import datetime, timedelta
 
@@ -10,7 +11,12 @@ from ghrsst.cogger import GHRSSTException, get_logger, get_output_path
 
 
 async def create_parquet(
-    start_date: str, end_date: str, input_location: str, output_location: str, log=None
+    start_date: str,
+    end_date: str,
+    input_location: str,
+    output_location: str,
+    write_tempfile: bool = False,
+    log: Logger = None,
 ) -> int:
     dates = [
         start_date + timedelta(days=i) for i in range((end_date - start_date).days + 1)
@@ -18,6 +24,9 @@ async def create_parquet(
 
     if log is not None:
         log.info(f"Working from {start_date:%Y-%m-%d} to {end_date:%Y-%m-%d}")
+        log.info(
+            f"Reading from {input_location}, writing to {output_location}, write_tempfile is {write_tempfile}"
+        )
 
     location = S3Path(input_location)
     hrefs = []
@@ -52,21 +61,28 @@ async def create_parquet(
         raise GHRSSTException("No items to write to parquet")
 
     if output_location.startswith("s3://"):
-        # Write to a tempfile
-        temp_file = "/tmp/ghrsst-mur-v2.parquet"
-        if log is not None:
-            log.info(f"Writing to tempfile at: {temp_file}")
-        stacrs.write(temp_file, items)
+        if write_tempfile:
+            # Write to a memoryfile
+            temp_file = "/tmp/ghrsst-mur-v2.parquet"
+            if log is not None:
+                log.info(f"Writing to tempfile at: {temp_file}")
+            await stacrs.write(temp_file, items)
 
-        # Move the tempfile to the final location on S3
-        out = S3Path(output_location.replace("s3://", "/")) / "ghrsst-mur-v2.parquet"
+            # Move the tempfile to the final location on S3
+            out = (
+                S3Path(output_location.replace("s3://", "/")) / "ghrsst-mur-v2.parquet"
+            )
 
-        if log is not None:
-            log.info(f"Copying tempfile to S3 at : s3:/{out}")
-        with open(temp_file, "rb") as f:
-            out.write_bytes(f.read())
+            if log is not None:
+                log.info(f"Copying tempfile to S3 at : S3:/{out}")
+            with open(temp_file, "rb") as f:
+                out.write_bytes(f.read())
+        else:
+            # Write direct to S3
+            log.info(f"Writing {len(items)} items to S3 at: {out}")
+            await stacrs.write(out, items)
     else:
-        stacrs.write(out, items)
+        await stacrs.write(out, items)
 
     return len(items)
 
@@ -80,8 +96,13 @@ def lambda_handler(event, _):
     start_date_str = os.environ.get("START_DATE", "2025-01-01")
     start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
 
-    input_location = os.environ.get("INPUT_LOCATION", "s3:/ausantarctic/ghrsst-mur-v2")
-    output_location = os.environ.get("OUTPUT_LOCATION", input_location)
+    input_location = os.environ.get(
+        "INPUT_LOCATION", "s3:/ausantarctic/ghrsst-mur-v2"
+    ).replace("s3://", "s3:/")
+    output_location = os.environ.get("OUTPUT_LOCATION", input_location).replace(
+        "s3://", "s3:/"
+    )
+    write_tempfile = os.environ.get("WRITE_TEMPFILE", "true").lower() == "true"
 
     result = asyncio.run(
         create_parquet(
@@ -89,7 +110,8 @@ def lambda_handler(event, _):
             end_date=end_date,
             input_location=input_location,
             output_location=output_location,
-            log=log
+            write_tempfile=write_tempfile,
+            log=log,
         )
     )
 
@@ -100,8 +122,9 @@ def lambda_handler(event, _):
 @click.option("--end-date", type=str)
 @click.option("--input-location", type=str, default="s3://ausantarctic/ghrsst-mur-v2")
 @click.option("--output-location", type=str, default=None)
+@click.option("--write-tempfile/--no-write-tempfile", is_flag=True, default=True)
 @click.command("create-parquet")
-def main(start_date, end_date, input_location, output_location):
+def main(start_date, end_date, input_location, output_location, write_tempfile):
     start_date = datetime.strptime(start_date, "%Y-%m-%d")
     end_date = datetime.strptime(end_date, "%Y-%m-%d")
 
@@ -110,7 +133,7 @@ def main(start_date, end_date, input_location, output_location):
     if output_location is None:
         output_location = input_location
     else:
-        output_location = output_location.replace("s3://", "s3:/")
+        output_location = output_location.replace("s3://", "s3:/").rstrip("/")
 
     # Only catch known exceptions, and otherwise let the program crash
     try:
@@ -121,11 +144,14 @@ def main(start_date, end_date, input_location, output_location):
                 end_date=end_date,
                 input_location=input_location,
                 output_location=output_location,
-                log=log
+                write_tempfile=write_tempfile,
+                log=log,
             )
         )
 
-        click.echo(f"Created parquet with {result} rows, writing to {output_location}")
+        click.echo(
+            f"Created parquet with {result} rows, written to {output_location.replace('s3:/', 's3://')}/ghrsst-mur-v2.parquet"
+        )
     except GHRSSTException as e:
         print(f"Failed to create parquet with error {e}")
         exit(1)

@@ -74,7 +74,7 @@ bbox = (
     center[0] + buffer,
 )
 
-items = stacrs.read(url)  # Or use .search to filter
+items = await stacrs.read(url)  # Or use .search to filter
 items = [pystac.Item.from_dict(i) for i in items["features"]]
 
 data = load(items, bbox=bbox, chunks={})
