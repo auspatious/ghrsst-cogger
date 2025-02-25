@@ -52,6 +52,35 @@ sst_scaled = sst_masked * scale + offset + k_to_c
 sst_scaled.plot.imshow(size=8, robust=True, cmap="inferno")
 ```
 
+### Reading from STAC Parquet file
+
+Alternately, you can use the STAC Parquet file as an index to all the STAC docs.
+
+```python
+import stacrs
+import pystac
+from odc.stac import load
+
+url = "https://data.source.coop/ausantarctic/ghrsst-mur-v2/ghrsst-mur-v2.parquet"
+
+center = 13, -61
+year = 2025
+buffer = 5
+
+bbox = (
+    center[1] - buffer,
+    center[0] - buffer,
+    center[1] + buffer,
+    center[0] + buffer,
+)
+
+items = stacrs.read(url)  # Or use .search to filter
+items = [pystac.Item.from_dict(i) for i in items["features"]]
+
+data = load(items, bbox=bbox, chunks={})
+data
+```
+
 ## License
 
 See: [https://podaac.jpl.nasa.gov/CitingPODAAC](https://podaac.jpl.nasa.gov/CitingPODAAC)

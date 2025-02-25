@@ -263,7 +263,10 @@ resource "aws_iam_policy" "ghrsst_role_policy_daily" {
         "logs:CreateLogStream",
         "logs:PutLogEvents"
       ],
-      "Resource": "${aws_cloudwatch_log_group.ghrsst_log_group_daily.arn}:*",
+      "Resource": [
+        "${aws_cloudwatch_log_group.ghrsst_log_group_daily.arn}:*",
+        "${aws_cloudwatch_log_group.parquet.arn}:*"
+      ],
       "Effect": "Allow"
     },
     {
@@ -304,4 +307,56 @@ resource "aws_lambda_permission" "allow_cloudwatch_to_call_daily" {
   function_name = aws_lambda_function.daily_lambda.function_name
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.daily_lambda.arn
+}
+
+# Set up a third log group, for the parquet creator
+resource "aws_cloudwatch_log_group" "parquet" {
+  name              = "/aws/lambda/ghrsst-lambda-parquet"
+  retention_in_days = 5
+}
+
+# The third lambda function, recreates a parquet file
+resource "aws_lambda_function" "parquet" {
+  function_name = "ghrsst-lambda-parquet"
+  role          = aws_iam_role.ghrsst_role.arn  # re-use the og role
+  image_config {
+    command = ["ghrsst.create_parquet.lambda_handler"]
+  }
+  timeout       = 300   # 5 minutes
+  memory_size   = 4096 # 4 GB
+  ephemeral_storage {
+    size = 1536
+  }
+
+  # Run a dockerfile
+  image_uri    = "${resource.aws_ecr_repository.ghrsst.repository_url}:${var.image_tag}"
+  package_type = "Image"
+
+  environment {
+    variables = {
+      START_DATE = "2025-01-01",
+      OUTPUT_LOCATION = "s3://${var.destination_bucket_path}",
+    }
+  }
+}
+
+# Schedule that parquet lambda
+resource "aws_cloudwatch_event_rule" "parquet" {
+  name                = "ghrsst-lambda-parquet"
+  description         = "Run the daily lambda"
+  schedule_expression = "rate(1 day)"
+}
+
+resource "aws_cloudwatch_event_target" "parquet" {
+  rule      = aws_cloudwatch_event_rule.parquet.name
+  target_id = "ghrsst-lambda-parquet"
+  arn       = aws_lambda_function.parquet.arn
+}
+
+resource "aws_lambda_permission" "allow_cloudwatch_to_call_parquet" {
+  statement_id  = "AllowExecutionFromCloudWatch"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.parquet.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.parquet.arn
 }
