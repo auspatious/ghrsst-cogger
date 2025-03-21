@@ -337,7 +337,7 @@ resource "aws_lambda_function" "parquet" {
 
   environment {
     variables = {
-      START_DATE      = "2000-01-01",
+      START_DATE      = "2003-02-15",
       OUTPUT_LOCATION = "s3://${var.destination_bucket_path}",
     }
   }

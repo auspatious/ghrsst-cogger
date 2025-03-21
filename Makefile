@@ -1,3 +1,4 @@
+# TERRAFORM STUFF
 init:
 	terraform -chdir=terraform init
 
@@ -13,12 +14,18 @@ destroy:
 	terraform -chdir=terraform destroy \
 		-var-file=prod.tfvars
 
+
+# SOURCE COOP STUFF
 update-readme:
 	AWS_REQUEST_CHECKSUM_CALCULATION=WHEN_REQUIRED \
 		aws s3 cp readme_for_source_coop.md s3://ausantarctic/ghrsst-mur-v2/README.md
 
 count-stac:
 	aws s3 ls --recursive s3://ausantarctic/ghrsst-mur-v2/ | grep '\.json$' | wc -
+
+# DOCKER STUFF
+get-ecr-login:
+	aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin 381491825451.dkr.ecr.us-west-2.amazonaws.com
 
 # Run with `make build VERSION=0.1.0`
 build:
@@ -30,6 +37,7 @@ push:
 	docker push 381491825451.dkr.ecr.us-west-2.amazonaws.com/ghrsst-cogger:latest
 	docker push 381491825451.dkr.ecr.us-west-2.amazonaws.com/ghrsst-cogger:$(VERSION)
 
+# CODE TESTING STUFF
 data/20231106090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc:
 	echo "Go get the file!"
 
