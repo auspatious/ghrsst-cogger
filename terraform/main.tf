@@ -102,7 +102,7 @@ resource "aws_lambda_function" "ghrsst_lambda" {
   timeout       = 480   # 8 minutes
   memory_size   = 10240 # 10240 10 GB
   ephemeral_storage {
-    size = 1536
+    size = 6000
   }
 
   # Run a dockerfile
@@ -144,8 +144,8 @@ EOF
 }
 
 # And a policy
-resource "aws_iam_policy" "ghrsst_role_policy" {
-  name   = "ghrsst-data-writer-policy"
+resource "aws_iam_policy" "ghrsst_writer_policy" {
+  name   = "ghrsst-writer-policy"
   policy = <<EOF
 {
   "Version": "2012-10-17",
@@ -155,7 +155,10 @@ resource "aws_iam_policy" "ghrsst_role_policy" {
         "logs:CreateLogStream",
         "logs:PutLogEvents"
       ],
-      "Resource": "${aws_cloudwatch_log_group.ghrsst_log_group.arn}:*",
+      "Resource": [
+        "${aws_cloudwatch_log_group.ghrsst_log_group.arn}:*",
+        "${aws_cloudwatch_log_group.parquet.arn}:*"
+      ],
       "Effect": "Allow"
     },
     {
@@ -191,7 +194,7 @@ EOF
 # Join the role and policy
 resource "aws_iam_role_policy_attachment" "ghrsst_role_policy_attachment" {
   role       = aws_iam_role.ghrsst_role.name
-  policy_arn = aws_iam_policy.ghrsst_role_policy.arn
+  policy_arn = aws_iam_policy.ghrsst_writer_policy.arn
 }
 
 # Connect the lambda to the queue
@@ -292,7 +295,7 @@ resource "aws_iam_role_policy_attachment" "ghrsst_role_policy_attachment_daily" 
 resource "aws_cloudwatch_event_rule" "daily_lambda" {
   name                = "ghrsst-lambda-daily"
   description         = "Run the daily lambda"
-  schedule_expression = "rate(1 day)"
+  schedule_expression = "cron(0 0 * * ? *)" # Run at midnight
 }
 
 resource "aws_cloudwatch_event_target" "daily_lambda" {
@@ -311,19 +314,19 @@ resource "aws_lambda_permission" "allow_cloudwatch_to_call_daily" {
 
 # Set up a third log group, for the parquet creator
 resource "aws_cloudwatch_log_group" "parquet" {
-  name              = "/aws/lambda/ghrsst-lambda-parquet"
+  name              = "/aws/lambda/ghrsst-lambda-parquet-daily"
   retention_in_days = 5
 }
 
 # The third lambda function, recreates a parquet file
 resource "aws_lambda_function" "parquet" {
-  function_name = "ghrsst-lambda-parquet"
-  role          = aws_iam_role.ghrsst_role.arn  # re-use the og role
+  function_name = "ghrsst-lambda-parquet-daily"
+  role          = aws_iam_role.ghrsst_role.arn # re-use the og role, because it can write
   image_config {
     command = ["ghrsst.create_parquet.lambda_handler"]
   }
-  timeout       = 300   # 5 minutes
-  memory_size   = 4096 # 4 GB
+  timeout     = 600  # 10 minutes
+  memory_size = 4096 # 4 GB
   ephemeral_storage {
     size = 1536
   }
@@ -334,22 +337,22 @@ resource "aws_lambda_function" "parquet" {
 
   environment {
     variables = {
-      START_DATE = "2025-01-01",
+      START_DATE      = "2000-01-01",
       OUTPUT_LOCATION = "s3://${var.destination_bucket_path}",
     }
   }
 }
 
-# Schedule that parquet lambda
+# Schedule that parquet lambda using cron
 resource "aws_cloudwatch_event_rule" "parquet" {
-  name                = "ghrsst-lambda-parquet"
+  name                = "ghrsst-lambda-parquet-daily"
   description         = "Run the daily lambda"
-  schedule_expression = "rate(1 day)"
+  schedule_expression = "cron(0 1 * * ? *)" # Run at 1 am
 }
 
 resource "aws_cloudwatch_event_target" "parquet" {
   rule      = aws_cloudwatch_event_rule.parquet.name
-  target_id = "ghrsst-lambda-parquet"
+  target_id = "ghrsst-lambda-parquet-daily"
   arn       = aws_lambda_function.parquet.arn
 }
 

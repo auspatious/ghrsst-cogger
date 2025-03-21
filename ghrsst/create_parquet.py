@@ -1,13 +1,67 @@
 import asyncio
-from logging import Logger
 import os
 from datetime import datetime, timedelta
+from logging import Logger
 
 import click
 import stacrs
 from s3path import S3Path
 
 from ghrsst.cogger import GHRSSTException, get_logger, get_output_path
+
+
+async def fetch_all_items(dates, input_location, concurrent_requests=20):
+    location = S3Path(input_location)
+    hrefs = [
+        str(get_output_path(location, date, ".stac-item.json")).replace(
+            input_location, "https://data.source.coop/ausantarctic/ghrsst-mur-v2"
+        )
+        for date in dates
+    ]
+
+    print(f"Prepared {len(hrefs)} hrefs")
+
+    async def fetch_item(href, semaphore):
+        async with semaphore:
+            try:
+                return await stacrs.read(href)
+            except Exception as e:
+                print(f"Failed to fetch {href} with error {e}")
+                return None
+
+    semaphore = asyncio.Semaphore(concurrent_requests)
+    tasks = [asyncio.create_task(fetch_item(href, semaphore)) for href in hrefs]
+    items = await asyncio.gather(*tasks)
+
+    return [item for item in items if item is not None]
+
+
+async def get_items(dates, input_location):
+    location = S3Path(input_location)
+    hrefs = []
+
+    for date in dates:
+        path = get_output_path(location, date, ".stac-item.json")
+        href = str(path).replace(
+            input_location, "https://data.source.coop/ausantarctic/ghrsst-mur-v2"
+        )
+
+        hrefs.append(href)
+
+    print(f"Prepared {len(hrefs)} hrefs")
+
+    async def fetch_item(href):
+        try:
+            item = await stacrs.read(href)
+            return item
+        except Exception as e:
+            print(f"Failed to fetch {href} with error {e}")
+            return None
+
+    items = await asyncio.gather(*[fetch_item(href) for href in hrefs])
+    items = [item for item in items if item is not None]
+
+    return items
 
 
 async def create_parquet(
@@ -28,27 +82,9 @@ async def create_parquet(
             f"Reading from {input_location}, writing to {output_location}, write_tempfile is {write_tempfile}"
         )
 
-    location = S3Path(input_location)
-    hrefs = []
+    items = await fetch_all_items(dates, input_location)
 
-    for date in dates:
-        path = get_output_path(location, date, ".stac-item.json")
-        href = str(path).replace(
-            input_location, "https://data.source.coop/ausantarctic/ghrsst-mur-v2"
-        )
-
-        hrefs.append(href)
-
-    items = []
-
-    for href in hrefs:
-        try:
-            item = await stacrs.read(href)
-            items.append(item)
-        except Exception:
-            if log is not None:
-                log.info(f"Skipping: {href}")
-            continue
+    log.info(f"Found {len(items)} STAC items")
 
     # Write items to parquet
     output_location = output_location.replace("s3:/", "s3://")

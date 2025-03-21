@@ -104,6 +104,12 @@ def get_logger():
     return logger
 
 
+# If we're in Lambda, create a logger
+LOGGER = None
+if os.environ.get("AWS_EXECUTION_ENV") is not None:
+    LOGGER = get_logger()
+
+
 def get_output_path(
     output_location: Union[Path, S3Path], date: datetime, extension: str
 ):
@@ -224,14 +230,16 @@ def process_data(data: Dataset) -> Dataset:
     data = data.assign_coords(new_coords)
 
     # Now update coords for each data variable
-    for var in VARIABLES:
+    for var in data.data_vars:
         data[var].odc.reload()
 
     # Update SST metadata to be in celcius
     data["analysed_sst"].attrs["units"] = "celsius"
     data["analysed_sst"].attrs["add_offset"] = 25
-    data["sst_anomaly"].attrs["units"] = "celsius"
     data["analysis_error"].attrs["units"] = "celsius"
+
+    if "sst_anomaly" in data.data_vars:
+        data["sst_anomaly"].attrs["units"] = "celsius"
 
     return data
 
@@ -250,12 +258,12 @@ def write_data(
     data = data.chunk({"time": 1, "lat": 500, "lon": 500})
 
     written_files = []
-    for var in VARIABLES:
+    for var in data.data_vars:
         cog_file = get_output_path(output_location, date, f"_{var}.tif")
 
         if _exists(cog_file) and not overwrite:
             log.info(f"Skipping {var} as it already exists")
-            written_files.append(cog_file)
+            written_files.append((var, cog_file))
             continue
 
         data_var = data[var]
@@ -298,21 +306,21 @@ def write_data(
         if log is not None:
             log.info(f"Finished writing {var}")
 
-        written_files.append(cog_file)
+        written_files.append((var, cog_file))
 
     return written_files
 
 
 def write_stac(
     data: Dataset,
-    written_files: Tuple[Path],
+    written_files: Tuple[Tuple[str, Path]],
     date: datetime,
     output_location: Union[Path, S3Path],
     log: Logger | None = None
 ) -> Item:
     stac_file = get_output_path(output_location, date, ".stac-item.json")
 
-    first_item = written_files[0]
+    first_item = written_files[0][1]
     href = _get_href(first_item)
 
     log.info(f"Writing STAC based on {href}")
@@ -336,7 +344,7 @@ def write_stac(
                 roles=["data"],
                 extra_fields={"raster:bands": get_simple_raster_info(data, var)},
             )
-            for var, file in zip(VARIABLES, written_files)
+            for var, file in written_files
         },
     )
 
@@ -439,12 +447,18 @@ def process_date(
             log.info("Writing STAC")
             stac_doc = write_stac(data, written_files, date, output_location, log=log)
 
+            # Cleanup
+            if cache_local:
+                log.info("Cleaning up cache")
+                cache_path = Path("/tmp") / FILE_STRING.format(date=date)
+                cache_path.unlink()
+
             log.info(f"Finished writing to: {stac_doc.self_href}")
 
 
 def lambda_handler(event, _):
-    # Set up a tidy logger
-    log = get_logger()
+    # Set up a tidy logger, but try to use the AWS way of logging
+    log = LOGGER
     log.info(f"Event: {event}")
 
     date_str = None

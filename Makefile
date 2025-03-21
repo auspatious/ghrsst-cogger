@@ -14,7 +14,11 @@ destroy:
 		-var-file=prod.tfvars
 
 update-readme:
-	aws s3 cp readme_for_source_coop.md s3://ausantarctic/ghrsst-mur-v2/README.md
+	AWS_REQUEST_CHECKSUM_CALCULATION=WHEN_REQUIRED \
+		aws s3 cp readme_for_source_coop.md s3://ausantarctic/ghrsst-mur-v2/README.md
+
+count-stac:
+	aws s3 ls --recursive s3://ausantarctic/ghrsst-mur-v2/ | grep '\.json$' | wc -
 
 # Run with `make build VERSION=0.1.0`
 build:
